@@ -1,0 +1,22 @@
+name: "Baseline RAG Evaluation"
+description: "Simple retrieval-generation baseline with BM25 and GPT-3.5-turbo"
+run_id: "v0.0.0-baseline"
+pipeline_type: "baseline"
+
+retrieval_config:
+  strategy: "bm25"
+  top_k: 5
+  k1: 1.5
+  b: 0.75
+
+llm_configs:
+  generator:
+    provider: "openai"
+    model: "gpt-3.5-turbo"
+    temperature: 0.0
+    max_tokens: 256
+    api_key_env_var: "OPENAI_API_KEY"
+
+hyperparameters:
+  # Optional: subset for testing
+  # subset_size: 100
