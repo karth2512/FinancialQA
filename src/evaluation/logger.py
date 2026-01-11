@@ -33,7 +33,9 @@ class LangfuseLogger:
 
                 if not public_key or not secret_key:
                     print("Warning: Langfuse credentials not found. Logging disabled.")
-                    print("Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY environment variables.")
+                    print(
+                        "Set LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY environment variables."
+                    )
                     self.enabled = False
                     return
 

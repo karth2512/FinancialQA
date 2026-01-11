@@ -7,7 +7,7 @@ retrieval implementations must extend.
 
 from abc import ABC, abstractmethod
 from typing import List
-from src.data.models import EvidencePassage, RetrievalResult
+from src.data_handler.models import EvidencePassage, RetrievalResult
 
 
 class RetrieverBase(ABC):
@@ -90,6 +90,4 @@ class IndexNotBuiltError(Exception):
             strategy: Which retrieval strategy has no index
         """
         self.strategy = strategy
-        super().__init__(
-            f"Index not built for {strategy}. Call index_corpus() first."
-        )
+        super().__init__(f"Index not built for {strategy}. Call index_corpus() first.")

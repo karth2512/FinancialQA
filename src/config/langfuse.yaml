@@ -1,0 +1,31 @@
+# Langfuse Default Configuration
+# These values can be overridden via environment variables or experiment config
+
+# Client Configuration
+flush_interval: 5  # Seconds between automatic flushes
+flush_batch_size: 100  # Number of events before automatic flush
+enabled: true  # Can be overridden by LANGFUSE_TRACING_ENABLED env var
+
+# Experiment Defaults
+default_concurrency: 1  # Sequential by default, users must opt-in to parallel
+max_concurrency_limit: 20  # Maximum allowed concurrency
+
+# Dataset Upload Defaults
+upload_batch_size: 50  # Items per batch during dataset upload
+upload_rate_limit_delay: 0.5  # Seconds between batches
+
+# Retry Configuration
+max_retries: 3  # Maximum retry attempts for failed API calls
+retry_base_delay: 1.0  # Base delay for exponential backoff (seconds)
+retry_max_delay: 60.0  # Maximum delay between retries (seconds)
+
+# Evaluation Configuration
+enable_item_evaluators: true  # Enable per-item evaluation by default
+enable_run_evaluators: true  # Enable run-level evaluation by default
+
+# Embedding Model for Semantic Similarity
+semantic_similarity_model: "all-MiniLM-L6-v2"  # Fast, good quality
+
+# Logging
+log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+log_progress: true  # Show progress bars for long operations

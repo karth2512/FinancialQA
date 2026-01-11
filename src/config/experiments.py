@@ -18,7 +18,9 @@ class LLMConfig(BaseModel):
     model: str = Field(..., description="Model identifier")
     temperature: float = Field(0.0, ge=0.0, le=2.0, description="Sampling temperature")
     max_tokens: int = Field(512, ge=1, description="Max completion tokens")
-    api_key_env_var: Optional[str] = Field(None, description="Environment variable name for API key")
+    api_key_env_var: Optional[str] = Field(
+        None, description="Environment variable name for API key"
+    )
 
     @field_validator("provider")
     @classmethod
@@ -35,10 +37,18 @@ class RetrievalConfig(BaseModel):
 
     strategy: str = Field(..., description="bm25, dense, or hybrid")
     top_k: int = Field(5, ge=1, description="Number of passages to retrieve")
-    embedding_model: Optional[str] = Field("all-MiniLM-L6-v2", description="For dense/hybrid retrieval")
+    k1: float = Field(1.5, ge=0.0, description="BM25 term frequency saturation")
+    b: float = Field(0.75, ge=0.0, le=1.0, description="BM25 length normalization")
+    embedding_model: Optional[str] = Field(
+        "all-MiniLM-L6-v2", description="For dense/hybrid retrieval"
+    )
     reranking: bool = Field(False, description="Whether to apply reranking")
-    bm25_weight: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="Weight for BM25 in hybrid mode")
-    dense_weight: Optional[float] = Field(0.5, ge=0.0, le=1.0, description="Weight for dense in hybrid mode")
+    bm25_weight: Optional[float] = Field(
+        0.5, ge=0.0, le=1.0, description="Weight for BM25 in hybrid mode"
+    )
+    dense_weight: Optional[float] = Field(
+        0.5, ge=0.0, le=1.0, description="Weight for dense in hybrid mode"
+    )
 
     @field_validator("strategy")
     @classmethod
@@ -54,22 +64,36 @@ class ExperimentConfig(BaseModel):
     """Configuration for an evaluation experiment."""
 
     name: str = Field(..., min_length=1, description="Experiment name")
-    description: str = Field(..., min_length=1, description="What this experiment tests")
+    description: str = Field(
+        ..., min_length=1, description="What this experiment tests"
+    )
     run_id: str = Field(..., min_length=1, description="Unique identifier for this run")
     pipeline_type: str = Field(..., description="baseline, multiagent, or specialized")
-    retrieval_config: RetrievalConfig = Field(..., description="Retrieval strategy configuration")
-    llm_configs: Dict[str, LLMConfig] = Field(..., description="LLM config per agent or single for baseline")
-    agent_architecture: Optional[List[str]] = Field(None, description="Agent types in execution order (multiagent only)")
-    orchestration_mode: Optional[str] = Field(None, description="sequential or parallel (multiagent only)")
-    hyperparameters: Dict[str, Any] = Field(default_factory=dict, description="Additional hyperparameters")
+    retrieval_config: RetrievalConfig = Field(
+        ..., description="Retrieval strategy configuration"
+    )
+    llm_configs: Dict[str, LLMConfig] = Field(
+        ..., description="LLM config per agent or single for baseline"
+    )
+    agent_architecture: Optional[List[str]] = Field(
+        None, description="Agent types in execution order (multiagent only)"
+    )
+    orchestration_mode: Optional[str] = Field(
+        None, description="sequential or parallel (multiagent only)"
+    )
+    hyperparameters: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional hyperparameters"
+    )
 
     @field_validator("pipeline_type")
     @classmethod
     def validate_pipeline_type(cls, v: str) -> str:
         """Validate pipeline type is supported."""
-        valid_types = {"baseline", "multiagent", "specialized"}
+        # Only baseline is currently implemented
+        # Future: Add support for multiagent and specialized pipelines
+        valid_types = {"baseline"}
         if v not in valid_types:
-            raise ValueError(f"pipeline_type must be one of {valid_types}")
+            raise ValueError(f"pipeline_type must be 'baseline' (only supported type currently)")
         return v
 
     @field_validator("orchestration_mode")
@@ -83,10 +107,9 @@ class ExperimentConfig(BaseModel):
         return v
 
     def model_post_init(self, __context: Any) -> None:
-        """Validate multiagent requirements."""
-        if self.pipeline_type == "multiagent":
-            if not self.agent_architecture:
-                raise ValueError("agent_architecture must be non-empty for multiagent pipeline")
+        """Validate pipeline-specific requirements."""
+        # Multi-agent validation removed - not currently implemented
+        pass
 
     @classmethod
     def from_yaml(cls, path: Path) -> "ExperimentConfig":
@@ -127,3 +150,134 @@ class ExperimentConfig(BaseModel):
                 default_flow_style=False,
                 sort_keys=False,
             )
+
+
+class LangfuseExperimentConfig(ExperimentConfig):
+    """
+    Extended experiment configuration with Langfuse-specific settings.
+
+    Inherits all standard experiment config fields and adds:
+    - Dataset management (Langfuse or local)
+    - Tracing configuration
+    - Concurrency settings
+    - Evaluator configuration
+    - Tags and metadata propagation
+    """
+
+    # Dataset Configuration
+    langfuse_dataset_name: Optional[str] = Field(
+        default=None, description="Langfuse dataset name to run experiment against"
+    )
+
+    use_local_data: bool = Field(
+        default=False,
+        description="Whether to use local FinDER data instead of Langfuse dataset",
+    )
+
+    local_data_path: Optional[Path] = Field(
+        default=None, description="Path to local data if use_local_data=True"
+    )
+
+    # Langfuse Tracing Configuration
+    flush_interval: float = Field(
+        default=5.0, gt=0.0, description="Seconds between automatic trace flushes"
+    )
+
+    flush_batch_size: int = Field(
+        default=100, ge=1, description="Number of events before automatic flush"
+    )
+
+    enable_tracing: bool = Field(
+        default=True,
+        description="Whether to enable Langfuse tracing (can be overridden by env var)",
+    )
+
+    # Concurrency Configuration
+    max_concurrency: int = Field(
+        default=1,
+        ge=1,
+        le=20,
+        description="Maximum concurrent task executions (1 = sequential)",
+    )
+
+    # Evaluator Configuration
+    enable_item_evaluators: bool = Field(
+        default=True, description="Whether to run item-level evaluators"
+    )
+
+    enable_run_evaluators: bool = Field(
+        default=True, description="Whether to run run-level (aggregate) evaluators"
+    )
+
+    item_evaluator_names: List[str] = Field(
+        default_factory=lambda: ["token_f1"],
+        description="Names of item-level evaluators to run",
+    )
+
+    run_evaluator_names: List[str] = Field(
+        default_factory=lambda: ["average_accuracy"],
+        description="Names of run-level evaluators to run",
+    )
+
+    evaluation_thresholds: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Minimum acceptable values for evaluators (e.g., {'token_f1': 0.5})",
+    )
+
+    # Metadata and Tags
+    langfuse_tags: List[str] = Field(
+        default_factory=list,
+        description="Tags to attach to all traces in this experiment",
+    )
+
+    langfuse_metadata: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Metadata to attach to all traces in this experiment",
+    )
+
+    propagate_query_metadata: bool = Field(
+        default=True, description="Whether to propagate FinDER query metadata to traces"
+    )
+
+    @field_validator("item_evaluator_names")
+    @classmethod
+    def validate_item_evaluators(cls, v: List[str]) -> List[str]:
+        """Validate evaluator names are recognized."""
+        valid_evaluators = {
+            "token_f1",
+            "exact_match",
+            "semantic_similarity",
+            "retrieval_precision",
+            "retrieval_recall",
+            "retrieval_quality",
+            "answer_correctness",
+        }
+
+        for evaluator in v:
+            if evaluator not in valid_evaluators:
+                raise ValueError(
+                    f"Unknown item evaluator: {evaluator}. "
+                    f"Valid options: {valid_evaluators}"
+                )
+
+        return v
+
+    @field_validator("run_evaluator_names")
+    @classmethod
+    def validate_run_evaluators(cls, v: List[str]) -> List[str]:
+        """Validate run-level evaluator names are recognized."""
+        valid_evaluators = {
+            "average_accuracy",
+            "aggregate_retrieval_metrics",
+            "pass_rate",
+            "regression_check",
+        }
+
+        for evaluator in v:
+            if evaluator not in valid_evaluators:
+                raise ValueError(
+                    f"Unknown run evaluator: {evaluator}. "
+                    f"Valid options: {valid_evaluators}"
+                )
+
+        return v

@@ -52,7 +52,9 @@ class DisambiguationCache:
             self.miss_count += 1
             return None
 
-    def set(self, term: str, disambiguation: str, context: str = "", confidence: float = 1.0):
+    def set(
+        self, term: str, disambiguation: str, context: str = "", confidence: float = 1.0
+    ):
         """
         Store disambiguation in cache.
 
