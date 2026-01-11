@@ -11,11 +11,11 @@ retrieval_config:
 
 llm_configs:
   generator:
-    provider: "openai"
-    model: "gpt-3.5-turbo"
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
     temperature: 0.0
     max_tokens: 128
-    api_key_env_var: "OPENAI_API_KEY"
+    api_key_env_var: "ANTHROPIC_API_KEY"
 
 hyperparameters:
   subset_size: 10

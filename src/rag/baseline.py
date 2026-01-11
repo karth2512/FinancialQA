@@ -6,7 +6,7 @@ This module implements a simple RAG approach: query → retrieve → generate.
 
 import time
 from typing import List, Dict, Any
-from src.data.models import Query, RetrievalResult
+from src.data_handler.models import Query, RetrievalResult
 from src.retrieval.base import RetrieverBase
 from src.retrieval.bm25 import BM25Retriever
 from src.retrieval.dense import DenseRetriever
@@ -70,9 +70,7 @@ class BaselineRAG:
             completion_tokens = 0
 
         # Step 4: Estimate cost
-        cost_estimate = self.llm_client.estimate_cost(
-            prompt_tokens, completion_tokens
-        )
+        cost_estimate = self.llm_client.estimate_cost(prompt_tokens, completion_tokens)
 
         total_latency = time.time() - start_time
 
@@ -109,22 +107,26 @@ class BaselineRAG:
         ]
 
         # Add retrieved passages
-        for i, retrieved_passage in enumerate(retrieval_result.retrieved_passages, start=1):
+        for i, retrieved_passage in enumerate(
+            retrieval_result.retrieved_passages, start=1
+        ):
             prompt_parts.append(
                 f"\n[Passage {i}] (Score: {retrieved_passage.score:.3f})"
             )
             prompt_parts.append(retrieved_passage.passage.text)
 
-        prompt_parts.extend([
-            "",
-            "Instructions:",
-            "- Answer the question based ONLY on the evidence passages provided above",
-            "- Be concise and factual",
-            "- If the evidence is insufficient to answer the question, say 'Insufficient evidence'",
-            "- Do not make up information not present in the evidence",
-            "",
-            "Answer:",
-        ])
+        prompt_parts.extend(
+            [
+                "",
+                "Instructions:",
+                "- Answer the question based ONLY on the evidence passages provided above",
+                "- Be concise and factual",
+                "- If the evidence is insufficient to answer the question, say 'Insufficient evidence'",
+                "- Do not make up information not present in the evidence",
+                "",
+                "Answer:",
+            ]
+        )
 
         return "\n".join(prompt_parts)
 

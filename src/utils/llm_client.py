@@ -83,7 +83,9 @@ class OpenAIClient(LLMClient):
         try:
             import openai
         except ImportError:
-            raise ImportError("openai package required. Install with: pip install openai")
+            raise ImportError(
+                "openai package required. Install with: pip install openai"
+            )
 
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not self.api_key:
@@ -111,8 +113,10 @@ class OpenAIClient(LLMClient):
                 return response.choices[0].message.content or ""
             except Exception as e:
                 if attempt == self.max_retries - 1:
-                    raise LLMClientError(f"OpenAI API call failed after {self.max_retries} attempts: {e}")
-                time.sleep(2 ** attempt)  # Exponential backoff
+                    raise LLMClientError(
+                        f"OpenAI API call failed after {self.max_retries} attempts: {e}"
+                    )
+                time.sleep(2**attempt)  # Exponential backoff
 
         return ""  # Should never reach here
 
@@ -160,11 +164,15 @@ class AnthropicClient(LLMClient):
         try:
             import anthropic
         except ImportError:
-            raise ImportError("anthropic package required. Install with: pip install anthropic")
+            raise ImportError(
+                "anthropic package required. Install with: pip install anthropic"
+            )
 
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
-            raise ValueError("Anthropic API key required (set ANTHROPIC_API_KEY env var)")
+            raise ValueError(
+                "Anthropic API key required (set ANTHROPIC_API_KEY env var)"
+            )
 
         self.client = anthropic.Anthropic(api_key=self.api_key)
         self.model = model
@@ -188,8 +196,10 @@ class AnthropicClient(LLMClient):
                 return response.content[0].text
             except Exception as e:
                 if attempt == self.max_retries - 1:
-                    raise LLMClientError(f"Anthropic API call failed after {self.max_retries} attempts: {e}")
-                time.sleep(2 ** attempt)  # Exponential backoff
+                    raise LLMClientError(
+                        f"Anthropic API call failed after {self.max_retries} attempts: {e}"
+                    )
+                time.sleep(2**attempt)  # Exponential backoff
 
         return ""  # Should never reach here
 
@@ -201,9 +211,18 @@ class AnthropicClient(LLMClient):
         """Estimate cost based on Anthropic pricing."""
         # Pricing as of 2024 (approximate, adjust as needed)
         pricing = {
-            "claude-3-opus-20240229": {"prompt": 0.015 / 1000, "completion": 0.075 / 1000},
-            "claude-3-sonnet-20240229": {"prompt": 0.003 / 1000, "completion": 0.015 / 1000},
-            "claude-3-haiku-20240307": {"prompt": 0.00025 / 1000, "completion": 0.00125 / 1000},
+            "claude-3-opus-20240229": {
+                "prompt": 0.015 / 1000,
+                "completion": 0.075 / 1000,
+            },
+            "claude-3-sonnet-20240229": {
+                "prompt": 0.003 / 1000,
+                "completion": 0.015 / 1000,
+            },
+            "claude-3-haiku-20240307": {
+                "prompt": 0.00025 / 1000,
+                "completion": 0.00125 / 1000,
+            },
         }
 
         model_pricing = pricing.get(self.model, pricing["claude-3-sonnet-20240229"])
@@ -233,7 +252,9 @@ class LocalModelClient(LLMClient):
         try:
             from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
         except ImportError:
-            raise ImportError("transformers package required. Install with: pip install transformers")
+            raise ImportError(
+                "transformers package required. Install with: pip install transformers"
+            )
 
         self.model_name = model_name
         self.device = device
@@ -246,7 +267,9 @@ class LocalModelClient(LLMClient):
         """Generate text using local model."""
         max_length = kwargs.get("max_length", self.max_length)
 
-        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True).to(self.device)
+        inputs = self.tokenizer(prompt, return_tensors="pt", truncation=True).to(
+            self.device
+        )
 
         outputs = self.model.generate(
             **inputs,

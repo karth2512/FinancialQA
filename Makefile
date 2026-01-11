@@ -2,13 +2,7 @@ VENV := venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 
-# For Windows compatibility
-ifeq ($(OS),Windows_NT)
-	PYTHON := $(VENV)/Scripts/python
-	PIP := $(VENV)/Scripts/pip
-endif
-
-.PHONY: setup install download-data validate eval eval-baseline eval-multiagent eval-dev lint test clean help
+.PHONY: setup install download-data validate eval eval-baseline eval-multiagent eval-dev run-experiment lint test clean help
 
 help:
 	@echo "FinDER Multi-Agent RAG System - Available targets:"
@@ -20,16 +14,19 @@ help:
 	@echo "  make eval-baseline   - Run baseline RAG evaluation"
 	@echo "  make eval-multiagent - Run multi-agent RAG evaluation"
 	@echo "  make eval-dev        - Run development subset evaluation (fast iteration)"
+	@echo "  make run-experiment  - Run Langfuse experiment (CONFIG=path/to/config.yaml)"
 	@echo "  make lint            - Run code quality checks (black, flake8, mypy)"
 	@echo "  make test            - Run unit and integration tests"
 	@echo "  make clean           - Remove generated files and caches"
 
 setup: $(VENV)
+	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
-	@echo "Setup complete! Activate with: source venv/bin/activate (or venv\\Scripts\\activate on Windows)"
+	@echo "Setup complete! Activate with: source venv/bin/activate"
 
 $(VENV):
 	python3 -m venv $(VENV)
+	$(VENV)/bin/python -m ensurepip --upgrade
 
 install:
 	$(PIP) install -r requirements.txt
@@ -38,7 +35,10 @@ validate:
 	$(PYTHON) scripts/validate_setup.py
 
 download-data:
-	$(PYTHON) -m src.data.loader --download
+	$(PYTHON) -m src.data_handler.loader --download
+
+lf-run:
+	$(PYTHON) scripts/upload_dataset.py --name financial_qa_benchmark_v1 --filter all --yes --max-items 10
 
 eval:
 	$(PYTHON) -m src.evaluation.runner --config experiments/configs/latest.yaml
@@ -51,6 +51,11 @@ eval-multiagent:
 
 eval-dev:
 	$(PYTHON) -m src.evaluation.runner --config experiments/configs/dev.yaml
+
+CONFIG ?= experiments/configs/langfuse_baseline.yaml
+
+run-experiment:
+	$(PYTHON) scripts/run_experiment.py $(CONFIG)
 
 lint:
 	$(PYTHON) -m black src tests --check

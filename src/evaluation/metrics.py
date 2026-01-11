@@ -16,9 +16,12 @@ class EvaluationMetrics:
         """Initialize metrics calculator."""
         try:
             from sentence_transformers import SentenceTransformer
-            self.sem_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+            self.sem_model = SentenceTransformer("all-MiniLM-L6-v2")
         except ImportError:
-            print("Warning: sentence-transformers not available, semantic similarity disabled")
+            print(
+                "Warning: sentence-transformers not available, semantic similarity disabled"
+            )
             self.sem_model = None
 
     def compute_answer_metrics(
@@ -39,9 +42,7 @@ class EvaluationMetrics:
             Dict with keys: exact_match, token_f1, semantic_similarity
         """
         # Exact match
-        exact_match = float(
-            generated.strip().lower() == expected.strip().lower()
-        )
+        exact_match = float(generated.strip().lower() == expected.strip().lower())
 
         # Token-level F1
         token_f1 = self._compute_token_f1(generated, expected)
@@ -130,9 +131,13 @@ class EvaluationMetrics:
         """
         # Answer metrics
         answer_agg = {
-            "exact_match_rate": np.mean([m["exact_match"] for m in answer_metrics_list]),
+            "exact_match_rate": np.mean(
+                [m["exact_match"] for m in answer_metrics_list]
+            ),
             "mean_token_f1": np.mean([m["token_f1"] for m in answer_metrics_list]),
-            "mean_semantic_similarity": np.mean([m.get("semantic_similarity", 0) for m in answer_metrics_list]),
+            "mean_semantic_similarity": np.mean(
+                [m.get("semantic_similarity", 0) for m in answer_metrics_list]
+            ),
         }
 
         # Retrieval metrics

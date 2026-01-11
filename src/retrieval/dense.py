@@ -2,13 +2,17 @@
 Dense embedding-based retrieval using sentence transformers and ChromaDB.
 
 This module implements dense retrieval with semantic search capabilities.
+
+NOTE: This retrieval strategy is NOT actively tested in the current workflow.
+The codebase focuses on BM25 retrieval for baseline experiments.
+If you need dense retrieval, you may need to update dependencies and test thoroughly.
 """
 
 from typing import List, Optional
 import time
 import numpy as np
 from src.retrieval.base import RetrieverBase, IndexNotBuiltError, RetrievalError
-from src.data.models import EvidencePassage, RetrievalResult, RetrievedPassage
+from src.data_handler.models import EvidencePassage, RetrievalResult, RetrievedPassage
 
 
 class DenseRetriever(RetrieverBase):
@@ -102,7 +106,9 @@ class DenseRetriever(RetrieverBase):
                 )
 
                 if (i + batch_size) % 100 == 0:
-                    print(f"  Indexed {min(i + batch_size, len(passages))}/{len(passages)} passages")
+                    print(
+                        f"  Indexed {min(i + batch_size, len(passages))}/{len(passages)} passages"
+                    )
 
             self.is_indexed = True
             print(f"✓ Dense index built with {len(passages)} passages")
@@ -141,13 +147,19 @@ class DenseRetriever(RetrieverBase):
                     zip(results["ids"][0], results["distances"][0]), start=1
                 ):
                     # Find passage by ID
-                    passage = next((p for p in self.passages if p.id == passage_id), None)
+                    passage = next(
+                        (p for p in self.passages if p.id == passage_id), None
+                    )
 
                     if passage is None:
                         continue
 
                     # Convert distance to similarity score (ChromaDB returns distances)
-                    score = 1.0 - distance if self.similarity_metric == "cosine" else distance
+                    score = (
+                        1.0 - distance
+                        if self.similarity_metric == "cosine"
+                        else distance
+                    )
 
                     retrieved_passage = RetrievedPassage(
                         passage=passage,

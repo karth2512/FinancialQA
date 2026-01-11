@@ -8,7 +8,7 @@ from typing import List
 import time
 from rank_bm25 import BM25Okapi
 from src.retrieval.base import RetrieverBase, IndexNotBuiltError, RetrievalError
-from src.data.models import EvidencePassage, RetrievalResult, RetrievedPassage
+from src.data_handler.models import EvidencePassage, RetrievalResult, RetrievedPassage
 
 
 class BM25Retriever(RetrieverBase):

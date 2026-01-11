@@ -2,6 +2,10 @@
 Hybrid retrieval combining BM25 and dense retrieval with rank fusion.
 
 This module implements hybrid search that combines keyword and semantic retrieval.
+
+NOTE: This retrieval strategy is NOT actively tested in the current workflow.
+The codebase focuses on BM25 retrieval for baseline experiments.
+If you need hybrid retrieval, you may need to update dependencies and test thoroughly.
 """
 
 from typing import List
@@ -9,7 +13,7 @@ import time
 from src.retrieval.base import RetrieverBase, IndexNotBuiltError, RetrievalError
 from src.retrieval.bm25 import BM25Retriever
 from src.retrieval.dense import DenseRetriever
-from src.data.models import EvidencePassage, RetrievalResult, RetrievedPassage
+from src.data_handler.models import EvidencePassage, RetrievalResult, RetrievedPassage
 
 
 class HybridRetriever(RetrieverBase):
@@ -87,9 +91,7 @@ class HybridRetriever(RetrieverBase):
                     bm25_results, dense_results, top_k
                 )
             else:  # score_fusion
-                fused_passages = self._score_fusion(
-                    bm25_results, dense_results, top_k
-                )
+                fused_passages = self._score_fusion(bm25_results, dense_results, top_k)
 
             retrieval_time = time.time() - start_time
 

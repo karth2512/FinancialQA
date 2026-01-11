@@ -7,8 +7,7 @@ and aggregated metrics.
 
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
-from src.data.models import Query, RetrievalResult
-from src.agents.base import AgentExecution
+from src.data_handler.models import Query, RetrievalResult
 
 
 @dataclass
@@ -22,7 +21,11 @@ class AnswerMetrics:
 
     def __post_init__(self):
         """Validate answer metrics."""
-        for field_name in ["exact_match_rate", "mean_token_f1", "mean_semantic_similarity"]:
+        for field_name in [
+            "exact_match_rate",
+            "mean_token_f1",
+            "mean_semantic_similarity",
+        ]:
             value = getattr(self, field_name)
             if not (0.0 <= value <= 1.0):
                 raise ValueError(f"{field_name} must be in [0, 1] range")
@@ -92,7 +95,6 @@ class QueryTrace:
 
     query: Query  # The input query
     retrieval_result: RetrievalResult  # Retrieved evidence
-    agent_executions: List[AgentExecution]  # Agent decision logs
     generated_answer: str  # Final generated answer
     correctness_metrics: Dict[str, float]  # Answer correctness scores
     retrieval_quality_metrics: Dict[str, float]  # Retrieval quality scores
