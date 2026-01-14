@@ -56,6 +56,8 @@ CONFIG ?= experiments/configs/langfuse_baseline.yaml
 
 run-experiment:
 	$(PYTHON) scripts/run_experiment.py $(CONFIG)
+te:
+	$(PYTHON) test_langfuse_experiment.py
 
 lint:
 	$(PYTHON) -m black src tests --check

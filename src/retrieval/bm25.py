@@ -91,7 +91,7 @@ class BM25Retriever(RetrieverBase):
             retrieval_time = time.time() - start_time
 
             return RetrievalResult(
-                query_id="",  # Will be set by caller
+                query_id=query_text,  # Will be set by caller
                 retrieved_passages=retrieved_passages,
                 strategy="bm25",
                 retrieval_time_seconds=retrieval_time,

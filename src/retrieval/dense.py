@@ -172,7 +172,7 @@ class DenseRetriever(RetrieverBase):
             retrieval_time = time.time() - start_time
 
             return RetrievalResult(
-                query_id="",
+                query_id=query_text,
                 retrieved_passages=retrieved_passages,
                 strategy="dense",
                 retrieval_time_seconds=retrieval_time,
