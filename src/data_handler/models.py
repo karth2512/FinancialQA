@@ -47,6 +47,7 @@ class Query:
         if not self.text.strip():
             raise ValueError("text must be non-empty")
         if not self.expected_answer.strip():
+            #print(self.expected_answer)
             raise ValueError("expected_answer must be non-empty")
         if not self.expected_evidence:
             raise ValueError("expected_evidence must be non-empty list")

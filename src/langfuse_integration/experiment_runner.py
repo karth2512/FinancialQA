@@ -133,8 +133,8 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
         query = Query(
             id=input_data.get("id", "unknown"),
             text=query_text,
-            expected_answer="",  # Not needed for inference
-            expected_evidence=[],
+            expected_answer="a",  # Not needed for inference
+            expected_evidence=["a"],
             metadata=None,
         )
 

@@ -129,10 +129,11 @@ class FinDERLoader:
         """
         # FinDER dataset structure
         # Fields: _id, text (query), reasoning, category, references (evidence), answer, type
+        #print(example)
         query_text = example.get("text", "")
         expected_answer = example.get("answer", "")
         expected_evidence = example.get("references", [])
-
+        
         if isinstance(expected_evidence, str):
             expected_evidence = [expected_evidence]
 

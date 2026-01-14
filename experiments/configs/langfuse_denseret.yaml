@@ -1,0 +1,79 @@
+# Dense Retrieval RAG Experiment with Langfuse Integration
+# This configuration runs a RAG pipeline with dense semantic retrieval and Claude 3.5 Haiku
+
+name: "dense_rag_langfuse_v1"
+description: "RAG pipeline with dense semantic retrieval and Claude 3.5 Haiku generation"
+run_id: "exp-2026-01-10-dense_1"
+
+# Pipeline Configuration
+pipeline_type: "baseline"
+
+retrieval_config:
+  strategy: "dense"
+  top_k: 5
+  embedding_model: "all-MiniLM-L6-v2"
+  collection_name: "finder_corpus"
+  similarity_metric: "cosine"
+  reranking: false
+
+llm_configs:
+  generator:
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
+    temperature: 0.0
+    max_tokens: 512
+    api_key_env_var: "ANTHROPIC_API_KEY"
+
+# Langfuse Dataset Configuration
+langfuse_dataset_name: "financial_qa_benchmark_v1"
+use_local_data: false
+local_data_path: null
+
+# Langfuse Tracing Configuration
+flush_interval: 5.0
+flush_batch_size: 100
+enable_tracing: true
+
+# Concurrency Configuration
+# Note: Default is 1 (sequential). Increase carefully based on rate limits.
+max_concurrency: 1
+
+# Evaluator Configuration
+enable_item_evaluators: true
+enable_run_evaluators: true
+
+item_evaluator_names:
+  - "token_f1"
+  - "semantic_similarity"
+  - "retrieval_precision"
+  - "retrieval_recall"
+
+run_evaluator_names:
+  - "average_accuracy"
+  - "aggregate_retrieval_metrics"
+  - "pass_rate"
+
+# Evaluation Thresholds (for pass_rate evaluator)
+evaluation_thresholds:
+  token_f1: 0.5
+  retrieval_precision: 0.4
+
+# Metadata and Tags
+langfuse_tags:
+  - "experiment:dense"
+  - "model:claude-3.5-haiku"
+  - "retrieval:dense"
+  - "embedding:all-MiniLM-L6-v2"
+  - "env:development"
+
+langfuse_metadata:
+  team: "research"
+  environment: "development"
+  version: "1.0"
+
+propagate_query_metadata: true
+
+# Hyperparameters (additional custom parameters)
+hyperparameters:
+  use_query_expansion: false
+  enable_answer_verification: false

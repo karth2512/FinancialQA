@@ -67,6 +67,9 @@ experiments/configs/          # Experiment YAML configs
 data/                         # Data directory (gitignored)
 ```
 
+## Detailed architecture design
+Refer [ARCHITECTURE.md](ARCHITECTURE.md)ARCHITECTURE.md
+
 ## Commands
 
 ```bash
