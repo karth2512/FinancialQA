@@ -1,0 +1,107 @@
+# GraphRAG Query Expansion Experiment Configuration
+# Combines query expansion with GraphRAG local search
+# No LiteLLM proxy required - uses custom Anthropic ChatModel and HF EmbeddingModel
+
+name: "graphrag_query_expansion_v1"
+description: "Query expansion RAG with GraphRAG local search for enhanced recall (Python API)"
+run_id: "exp-2026-01-14-graphrag-qe"
+
+pipeline_type: "query_expansion"
+
+# GraphRAG Retrieval Configuration
+retrieval_config:
+  strategy: "graphrag"
+  top_k: 5
+
+  # GraphRAG-specific settings
+  graphrag_root: "./data/graphrag"
+  graphrag_method: "local"  # Entity-focused retrieval
+  graphrag_community_level: 2
+  graphrag_response_type: "Multiple Paragraphs"
+
+  # GraphRAG model configuration (no LiteLLM proxy needed)
+  graphrag_model_config:
+    chat_model: "claude-3-5-haiku-20241022"
+    chat_temperature: 0.0
+    chat_max_tokens: 4096
+    embedding_model: "all-MiniLM-L6-v2"
+    embedding_device: "cpu"
+    embedding_batch_size: 32
+
+  # BM25 settings (not used for graphrag, but required by schema)
+  k1: 1.5
+  b: 0.75
+
+# LLM Configuration (Dual LLMs for query expansion)
+llm_configs:
+  # Expander LLM (generates query variants)
+  expander:
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
+    temperature: 0.7  # Higher for diversity
+    max_tokens: 256
+    api_key_env_var: "ANTHROPIC_API_KEY"
+
+  # Generator LLM (generates final answer)
+  generator:
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
+    temperature: 0.0  # Deterministic
+    max_tokens: 512
+    api_key_env_var: "ANTHROPIC_API_KEY"
+
+# Query Expansion Hyperparameters
+hyperparameters:
+  num_expanded_queries: 3  # Generate 3 query variants (total 4 queries)
+
+# Langfuse Dataset Configuration
+langfuse_dataset_name: "financial_qa_benchmark_v1"
+use_local_data: false
+
+# Tracing Configuration
+flush_interval: 5.0
+flush_batch_size: 100
+enable_tracing: true
+
+# Concurrency (GraphRAG + QE is slow, keep sequential)
+max_concurrency: 1
+
+# Evaluation Configuration
+enable_item_evaluators: true
+enable_run_evaluators: true
+
+item_evaluator_names:
+  - "token_f1"
+  - "semantic_similarity"
+  - "retrieval_precision"
+  - "retrieval_recall"
+  - "retrieval_quality"
+
+run_evaluator_names:
+  - "average_accuracy"
+  - "aggregate_retrieval_metrics"
+  - "pass_rate"
+
+# Evaluation Thresholds
+evaluation_thresholds:
+  token_f1: 0.4
+  retrieval_precision: 0.3
+  retrieval_recall: 0.4  # Expecting higher recall with QE
+
+# Tags and Metadata
+langfuse_tags:
+  - "experiment:graphrag_query_expansion"
+  - "model:claude-3.5-haiku"
+  - "retrieval:graphrag_local"
+  - "method:query-expansion"
+
+langfuse_metadata:
+  team: "research"
+  retrieval_method: "graphrag_local"
+  pipeline_type: "query_expansion"
+  num_expanded_queries: 3
+  expected_cost_per_query_usd: "0.005-0.010"  # Higher due to QE + GraphRAG
+  expected_latency_seconds: "5-10"  # Slower due to multiple retrievals
+
+# Metadata Propagation
+propagate_query_metadata: true

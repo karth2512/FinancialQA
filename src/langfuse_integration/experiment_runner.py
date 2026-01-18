@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 
 def create_task_function(config: LangfuseExperimentConfig) -> Callable:
     """
-    Create a task function for baseline RAG pipeline.
+    Create a task function based on pipeline type.
 
     The task function receives a dataset item and returns the RAG pipeline output.
-    This factory pattern allows different pipeline types (baseline, multiagent)
+    This factory pattern allows different pipeline types (baseline, query_expansion)
     to be created based on config.
 
     Args:
@@ -40,9 +40,12 @@ def create_task_function(config: LangfuseExperimentConfig) -> Callable:
 
     if pipeline_type == "baseline":
         return _create_baseline_task(config)
+    elif pipeline_type == "query_expansion":
+        return _create_query_expansion_task(config)
     else:
         raise ValueError(
-            f"Unsupported pipeline_type: {pipeline_type}. Only 'baseline' is supported."
+            f"Unsupported pipeline_type: {pipeline_type}. "
+            f"Valid types: baseline, query_expansion"
         )
 
 
@@ -61,6 +64,7 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
     from ..retrieval.bm25 import BM25Retriever
     from ..retrieval.dense import DenseRetriever
     from ..retrieval.hybrid import HybridRetriever
+    from ..retrieval.graphrag import GraphRAGRetriever
     from ..data_handler.loader import FinDERLoader
     from ..data_handler.models import Query
     from ..utils.llm_client import create_llm_client
@@ -88,6 +92,15 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
         retriever = DenseRetriever(retriever_config)
     elif strategy == "hybrid":
         retriever = HybridRetriever(retriever_config)
+    elif strategy == "graphrag":
+        retriever_config = {
+            "graphrag_root": retrieval_config.graphrag_root or "./data/graphrag",
+            "method": retrieval_config.graphrag_method or "local",
+            "top_k": retrieval_config.top_k,
+            "community_level": retrieval_config.graphrag_community_level or 2,
+            "response_type": retrieval_config.graphrag_response_type or "Multiple Paragraphs",
+        }
+        retriever = GraphRAGRetriever(retriever_config)
     else:
         raise ValueError(f"Unsupported retrieval strategy: {strategy}")
 
@@ -133,8 +146,8 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
         query = Query(
             id=input_data.get("id", "unknown"),
             text=query_text,
-            expected_answer="a",  # Not needed for inference
-            expected_evidence=["a"],
+            expected_answer="a",   # Not used but needs to have value for post init checks 
+            expected_evidence=["a"],  # Not used but needs to have value for post init checks 
             metadata=None,
         )
 
@@ -169,6 +182,160 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
         return result
 
     return baseline_task
+
+
+def _create_query_expansion_task(config: LangfuseExperimentConfig) -> Callable:
+    """
+    Create task function for query expansion RAG pipeline.
+
+    This function:
+    1. Loads corpus and builds retrieval index (once)
+    2. Creates expander and generator LLM clients
+    3. Instantiates QueryExpansionRAG pipeline
+    4. Returns closure that processes each dataset item
+
+    Args:
+        config: Experiment configuration
+
+    Returns:
+        Task function for query expansion RAG
+    """
+    # Import RAG components
+    from ..rag.query_expansion import QueryExpansionRAG
+    from ..retrieval.bm25 import BM25Retriever
+    from ..retrieval.dense import DenseRetriever
+    from ..retrieval.hybrid import HybridRetriever
+    from ..retrieval.graphrag import GraphRAGRetriever
+    from ..data_handler.loader import FinDERLoader
+    from ..data_handler.models import Query
+    from ..utils.llm_client import create_llm_client
+
+    # Load corpus (once for all queries)
+    logger.info("Loading FinDER corpus...")
+    loader = FinDERLoader()
+    corpus = loader.load_corpus()
+    logger.info(f"Loaded {len(corpus)} passages")
+
+    # Create retriever based on strategy
+    retrieval_config = config.retrieval_config
+    strategy = retrieval_config.strategy.lower()
+
+    retriever_config = {
+        "k1": retrieval_config.k1,
+        "b": retrieval_config.b,
+        "top_k": retrieval_config.top_k,
+    }
+
+    if strategy == "bm25":
+        retriever = BM25Retriever(retriever_config)
+    elif strategy == "dense":
+        retriever = DenseRetriever(retriever_config)
+    elif strategy == "hybrid":
+        retriever = HybridRetriever(retriever_config)
+    elif strategy == "graphrag":
+        retriever_config = {
+            "graphrag_root": retrieval_config.graphrag_root or "./data/graphrag",
+            "method": retrieval_config.graphrag_method or "local",
+            "top_k": retrieval_config.top_k,
+            "community_level": retrieval_config.graphrag_community_level or 2,
+            "response_type": retrieval_config.graphrag_response_type or "Multiple Paragraphs",
+        }
+        retriever = GraphRAGRetriever(retriever_config)
+    else:
+        raise ValueError(f"Unknown retrieval strategy: {strategy}")
+
+    # Index corpus (once)
+    logger.info(f"Building {strategy} index...")
+    retriever.index_corpus(corpus)
+    logger.info("Index built successfully")
+
+    # Create LLM clients
+    expander_config = config.llm_configs.get("expander")
+    generator_config = config.llm_configs.get("generator")
+
+    if expander_config is None:
+        raise ValueError("Expander LLM config not found in config.llm_configs")
+    if generator_config is None:
+        raise ValueError("Generator LLM config not found in config.llm_configs")
+
+    expander_llm = create_llm_client(expander_config.model_dump())
+    generator_llm = create_llm_client(generator_config.model_dump())
+
+    logger.info(f"Expander LLM: {expander_config.provider}/{expander_config.model}")
+    logger.info(f"Generator LLM: {generator_config.provider}/{generator_config.model}")
+
+    # Get num_expanded_queries from hyperparameters
+    num_expanded_queries = config.hyperparameters.get("num_expanded_queries", 3)
+    logger.info(f"Query expansion: {num_expanded_queries} additional queries per input")
+
+    # Create RAG pipeline
+    rag_pipeline = QueryExpansionRAG(
+        retriever=retriever,
+        expander_llm=expander_llm,
+        generator_llm=generator_llm,
+        num_expanded_queries=num_expanded_queries,
+    )
+
+    def query_expansion_task(*, item, **kwargs):
+        """
+        Execute query expansion RAG pipeline for a single query.
+
+        Args:
+            item: Dataset item with input field containing query
+            **kwargs: Additional context from Langfuse
+
+        Returns:
+            Dict with answer, retrieved_passages, expansion_metadata, and metadata
+        """
+        # Extract query text from input
+        if isinstance(item, dict):
+            input_data = item.get("input", {})
+        else:
+            input_data = item.input
+
+        query_text = input_data.get("text") or input_data.get("question")
+
+        # Create Query object
+        query = Query(
+            id=input_data.get("id", "unknown"),
+            text=query_text,
+            expected_answer="a", # Not used but needs to have value for post init checks 
+            expected_evidence=["a"],  # Not used but needs to have value for post init checks 
+            metadata=None,
+        )
+
+        # Process query through RAG pipeline
+        rag_result = rag_pipeline.process_query(query, top_k=retrieval_config.top_k)
+
+        # Format retrieved passages for Langfuse
+        retrieved_passages = [
+            {
+                "passage_id": p.passage.id,
+                "text": p.passage.text,
+                "score": p.score,
+                "rank": p.rank,
+            }
+            for p in rag_result["retrieval_result"].retrieved_passages
+        ]
+
+        result = {
+            "answer": rag_result["generated_answer"],
+            "retrieved_passages": retrieved_passages,
+            "latency_seconds": rag_result["latency_seconds"],
+            "cost_estimate": rag_result.get("cost_estimate", 0.0),
+            "expansion_metadata": rag_result["expansion_metadata"],
+            "metadata": {
+                "pipeline_type": "query_expansion",
+                "retrieval_strategy": strategy,
+                "expander_model": expander_config.model,
+                "generator_model": generator_config.model,
+                "num_expanded_queries": num_expanded_queries,
+            },
+        }
+
+        return result
+
+    return query_expansion_task
 
 
 # Multi-agent task creation removed - not implemented

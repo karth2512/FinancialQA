@@ -127,7 +127,7 @@ class RetrievalResult:
             raise ValueError("query_id must reference an existing Query")
         if not self.retrieved_passages:
             raise ValueError("retrieved_passages must be non-empty list")
-        if self.strategy not in {"bm25", "dense", "hybrid"}:
-            raise ValueError("strategy must be one of: bm25, dense, hybrid")
+        if self.strategy not in {"bm25", "dense", "hybrid", "graphrag_local", "graphrag_global"}:
+            raise ValueError("strategy must be one of: bm25, dense, hybrid, graphrag_local, graphrag_global")
         if self.retrieval_time_seconds < 0:
             raise ValueError("retrieval_time_seconds must be non-negative")

@@ -1,0 +1,96 @@
+# GraphRAG Baseline Experiment Configuration
+# Uses GraphRAG local search (entity-focused retrieval) with Claude 3.5 Haiku
+# No LiteLLM proxy required - uses custom Anthropic ChatModel and HF EmbeddingModel
+
+name: "graphrag_baseline_local_v1"
+description: "Baseline RAG with GraphRAG local search for entity-aware retrieval (Python API)"
+run_id: "exp-2026-01-14-graphrag-baseline"
+
+pipeline_type: "baseline"
+
+# GraphRAG Retrieval Configuration
+retrieval_config:
+  strategy: "graphrag"
+  top_k: 5
+
+  # GraphRAG-specific settings
+  graphrag_root: "./data/graphrag"
+  graphrag_method: "local"  # Entity-focused retrieval
+  graphrag_community_level: 2  # Not used for local search
+  graphrag_response_type: "Multiple Paragraphs"
+
+  # GraphRAG model configuration (no LiteLLM proxy needed)
+  graphrag_model_config:
+    chat_model: "claude-3-5-haiku-20241022"
+    chat_temperature: 0.0
+    chat_max_tokens: 4096
+    embedding_model: "all-MiniLM-L6-v2"
+    embedding_device: "cpu"
+    embedding_batch_size: 32
+
+  # BM25 settings (not used for graphrag, but required by schema)
+  k1: 1.5
+  b: 0.75
+
+# LLM Configuration (Generator only for baseline)
+llm_configs:
+  generator:
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
+    temperature: 0.0
+    max_tokens: 512
+    api_key_env_var: "ANTHROPIC_API_KEY"
+
+# Langfuse Dataset Configuration
+langfuse_dataset_name: "financial_qa_benchmark_v1"
+use_local_data: false
+
+# Tracing Configuration
+flush_interval: 5.0
+flush_batch_size: 100
+enable_tracing: true
+
+# Concurrency (GraphRAG queries may be slower, keep sequential)
+max_concurrency: 1
+
+# Evaluation Configuration
+enable_item_evaluators: true
+enable_run_evaluators: true
+
+item_evaluator_names:
+  - "token_f1"
+  - "semantic_similarity"
+  - "retrieval_precision"
+  - "retrieval_recall"
+  - "retrieval_quality"
+
+run_evaluator_names:
+  - "average_accuracy"
+  - "aggregate_retrieval_metrics"
+  - "pass_rate"
+
+# Evaluation Thresholds
+evaluation_thresholds:
+  token_f1: 0.4
+  retrieval_precision: 0.3
+  retrieval_recall: 0.3
+
+# Tags and Metadata
+langfuse_tags:
+  - "experiment:graphrag_baseline"
+  - "model:claude-3.5-haiku"
+  - "retrieval:graphrag_local"
+  - "method:entity-focused"
+
+langfuse_metadata:
+  team: "research"
+  retrieval_method: "graphrag_local"
+  pipeline_type: "baseline"
+  expected_cost_per_query_usd: "0.001-0.002"
+  expected_latency_seconds: "1-3"
+
+# Metadata Propagation
+propagate_query_metadata: true
+
+# Additional Hyperparameters
+hyperparameters: {}

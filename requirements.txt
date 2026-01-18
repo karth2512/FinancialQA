@@ -9,6 +9,9 @@ pandas>=2.0.0
 rank-bm25>=0.2.2
 chromadb>=0.4.0
 faiss-cpu>=1.7.4
+graphrag>=2.0.0
+lancedb>=0.4.0
+pyarrow>=14.0.0
 
 # Evaluation Dependencies
 evaluate>=0.4.0

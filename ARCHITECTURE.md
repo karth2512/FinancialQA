@@ -75,13 +75,15 @@ src/
 │   └── retry.py              # Retry utilities
 │
 ├── rag/                     # RAG pipeline implementations
-│   └── baseline.py          # BaselineRAG: retrieve → generate pattern (CORE)
+│   ├── baseline.py          # BaselineRAG: retrieve → generate pattern (CORE)
+│   └── query_expansion.py   # QueryExpansionRAG: expand → retrieve → generate (NEW)
 │
 ├── retrieval/               # Passage retrieval strategies
 │   ├── base.py              # RetrieverBase abstract class
 │   ├── bm25.py              # BM25 retrieval (ACTIVELY USED)
 │   ├── dense.py             # Dense retrieval (NOT actively tested)
-│   └── hybrid.py            # Hybrid retrieval (NOT actively tested)
+│   ├── hybrid.py            # Hybrid retrieval (NOT actively tested)
+│   └── graphrag.py          # GraphRAG knowledge graph retrieval (NEW)
 │
 ├── data_handler/            # Dataset loading & preprocessing
 │   ├── models.py            # Data classes (Query, EvidencePassage, etc.)
@@ -182,6 +184,152 @@ data/                         # Data directory (gitignored)
 
 ---
 
+## RAG Pipeline Implementations
+
+### 1. Baseline RAG ([src/rag/baseline.py](src/rag/baseline.py))
+
+**Single-stage pipeline**:
+```
+Query → Retrieve → Generate
+```
+
+**Components**:
+- Retriever: BM25/Dense/Hybrid
+- Generator: Single LLM
+
+**Use Case**: Fast, simple RAG baseline
+
+---
+
+### 2. Query Expansion RAG ([src/rag/query_expansion.py](src/rag/query_expansion.py))
+
+**Multi-query pipeline**:
+```
+Query → Expand (M variants) → Retrieve (M+1 times) → Pool & Deduplicate → Generate
+```
+
+**Components**:
+- Expander: LLM for query reformulation (e.g., GPT-3.5)
+- Retriever: BM25/Dense/Hybrid (reused M+1 times)
+- Generator: LLM for answer synthesis (e.g., Claude)
+
+**Architecture**:
+1. **Expansion**: Generate M query variants via expander LLM with structured output (Pydantic)
+2. **Retrieval**: Retrieve top_k passages for each of M+1 queries
+3. **Pooling**: Deduplicate by passage ID, keep highest scores
+4. **Re-ranking**: Sort pooled passages by score (descending)
+5. **Generation**: Use pooled passages for final answer
+
+**Use Case**: Improved recall when single query misses relevant passages
+
+**Trade-offs**:
+- Recall: +10-25% (query diversity finds more relevant passages)
+- Precision: -5-10% (some expanded queries less relevant)
+- Latency: +50-100% (expansion LLM + M+1 retrievals)
+- Cost: +100-200% (expansion tokens + more retrieval)
+
+---
+
+### 3. GraphRAG Retrieval ([src/retrieval/graphrag.py](src/retrieval/graphrag.py))
+
+**Knowledge graph-based retrieval**:
+```
+Documents → Entity Extraction → Relationship Detection → Community Clustering → Indexed Graph
+Query → Graph Traversal (Local/Global) → Relevant Subgraph → Retrieved Passages
+```
+
+**Components**:
+- Indexing: Microsoft GraphRAG library with Anthropic Claude + local embeddings
+- Retriever: GraphRAGRetriever with local (entity-focused) and global (community-level) search
+- Generator: Single LLM (works with both baseline and query_expansion pipelines)
+
+**Architecture**:
+
+**One-Time Indexing** (via `scripts/graphrag_index.py`):
+1. **Chunking**: Split 5,703 text files into 300-token chunks
+2. **Entity Extraction**: Anthropic Claude 3.5 Haiku extracts financial entities (organizations, metrics, regulations)
+3. **Relationship Detection**: Claude identifies relationships between entities
+4. **Embedding**: sentence-transformers/all-MiniLM-L6-v2 (384d, local, no API)
+5. **Community Detection**: NetworkX hierarchical clustering (levels 0-5)
+6. **Community Summarization**: Claude generates summaries for each community
+7. **Output**: Parquet files in `data/graphrag/output/` (~100-200 MB)
+
+**Query-Time Retrieval** (two methods):
+
+**Local Search** (`graphrag_method: "local"`):
+- Entity-focused retrieval
+- Finds entities matching query keywords
+- Retrieves entity neighborhoods (1-2 hops)
+- Best for: Specific questions about known entities
+- Example: "What is Apple's revenue?" → Retrieves Apple entity + financial metrics
+
+**Global Search** (`graphrag_method: "global"`):
+- Community-level retrieval
+- Retrieves pre-computed community summaries
+- Hierarchical (uses `community_level` parameter)
+- Best for: Broad questions requiring multiple entities
+- Example: "What are tech industry trends?" → Retrieves tech sector community summaries
+
+**Use Cases**:
+- Multi-hop reasoning (e.g., "Compare revenues of companies in same sector")
+- Entity disambiguation (e.g., distinguishing "Apple Inc." from "Apple Records")
+- Relationship-aware retrieval (e.g., "Who are Tesla's competitors?")
+- Financial domain with many interconnected entities
+
+**Configuration**:
+```yaml
+retrieval_config:
+  strategy: "graphrag"
+  top_k: 5
+  graphrag_root: "./data/graphrag"
+  graphrag_method: "local"  # or "global"
+  graphrag_community_level: 2  # for global search (0-5)
+  graphrag_response_type: "Multiple Paragraphs"
+```
+
+**Trade-offs**:
+
+Advantages:
+- Entity-aware retrieval (understands "Apple Inc." vs. "Apple Records")
+- Multi-hop reasoning support (traverse relationships)
+- Better for complex financial queries with entity relationships
+- Pre-computed communities for fast global search
+- No query-time embedding needed (graph traversal only)
+
+Disadvantages:
+- High one-time indexing cost (~$3-6 USD for Anthropic Claude)
+- Slow indexing (30-90 minutes for 5,703 documents)
+- Higher query latency (1-5s vs. <0.1s for BM25)
+- Requires pre-built index (cannot handle new documents at query time)
+- More complex setup (indexing script, multiple parquet files)
+
+**Indexing Performance**:
+- Time: 30-90 minutes (depends on local hardware for embeddings)
+- Cost: ~$3-6 USD (Anthropic Claude only; embeddings free via sentence-transformers)
+- Output Size: ~100-200 MB parquet files
+- Memory: ~500MB (embedding model) + ~1GB (GraphRAG processing)
+
+**Query Performance**:
+- Local Search: 1-3s per query (~$0.001-0.002 USD for generation)
+- Global Search: 3-5s per query (~$0.003-0.005 USD for generation)
+- BM25 Baseline: <0.1s per query (free)
+
+**Setup Requirements**:
+1. Install dependencies: `pip install graphrag anthropic sentence-transformers`
+2. Set Anthropic API key: `export ANTHROPIC_API_KEY=sk-ant-...`
+3. Run indexing: `python scripts/graphrag_index.py` (30-90 min, ~$3-6 USD)
+4. Verify output: `ls data/graphrag/output/*.parquet`
+5. Run experiments: Use config files in `experiments/configs/graphrag_*.yaml`
+
+**Integration with Pipelines**:
+- **Baseline + GraphRAG**: `experiments/configs/graphrag_baseline.yaml`
+- **Global Search**: `experiments/configs/graphrag_global.yaml`
+- **Query Expansion + GraphRAG**: `experiments/configs/graphrag_query_expansion.yaml`
+
+GraphRAG is implemented as a **retrieval strategy** (like bm25, dense, hybrid), so it works seamlessly with existing baseline and query_expansion pipelines. This allows direct comparison of BM25 vs. GraphRAG while keeping all other variables constant.
+
+---
+
 ## Key Abstractions & Interfaces
 
 ### 1. Retriever Interface
@@ -205,6 +353,7 @@ class RetrieverBase(ABC):
 - `BM25Retriever` - Keyword-based (rank_bm25 library) - **ACTIVELY USED**
 - `DenseRetriever` - Semantic search (sentence-transformers + ChromaDB) - **NOT ACTIVELY TESTED**
 - `HybridRetriever` - Combined with rank fusion - **NOT ACTIVELY TESTED**
+- `GraphRAGRetriever` - Knowledge graph-based (Microsoft GraphRAG) - **NEW**
 
 ### 2. LLM Client Interface
 
@@ -487,12 +636,24 @@ def compute_average_accuracy(*, item_results, **kwargs):
 2. Register in `register_evaluators()`
 3. Allow in config validation
 
+### Adding New Pipeline Type
+
+1. Create new class in [src/rag/](src/rag/) implementing process_query interface
+2. Add pipeline_type to validator in [experiments.py](src/config/experiments.py)
+3. Add task creation function in [experiment_runner.py](src/langfuse_integration/experiment_runner.py)
+4. Create example config in [experiments/configs/](experiments/configs/)
+5. Update documentation (CLAUDE.md, ARCHITECTURE.md, README.md)
+
+**Example**: QueryExpansionRAG follows this pattern exactly.
+
 ---
 
 ## Current Status & Limitations
 
 ### Supported
 - ✅ Baseline RAG pipeline with BM25 retrieval
+- ✅ Query Expansion RAG pipeline with dual LLM setup
+- ✅ GraphRAG retrieval with local and global search
 - ✅ OpenAI/Anthropic LLM integration
 - ✅ Langfuse experiment tracking
 - ✅ Item and run-level evaluation
@@ -501,11 +662,11 @@ def compute_average_accuracy(*, item_results, **kwargs):
 ### Partially Supported
 - ⚠️ Dense/hybrid retrieval (implementations exist but untested)
 - ⚠️ Local LLM models (basic implementation)
+- ⚠️ GraphRAG (indexing script and retriever implemented, needs testing with actual GraphRAG library)
 
 ### Not Supported
 - ❌ Multi-agent pipelines (scaffolding removed)
 - ❌ Local data loading (marked TODO)
-- ❌ Query expansion
 - ❌ Answer verification
 - ❌ Reranking (config option exists but not implemented)
 
@@ -549,9 +710,11 @@ python scripts/compare_experiments.py exp-001 exp-002 exp-003
 - `pyyaml` - Configuration loading
 
 ### Optional
-- `sentence-transformers` - Dense retrieval
-- `chromadb` - Vector storage
+- `sentence-transformers` - Dense retrieval and GraphRAG embeddings
+- `chromadb` - Vector storage for dense retrieval
 - `transformers` - Local LLM models
+- `graphrag` - Microsoft GraphRAG library for knowledge graph-based retrieval
+- `anthropic` - Anthropic Claude API (required for GraphRAG indexing)
 
 ---
 
