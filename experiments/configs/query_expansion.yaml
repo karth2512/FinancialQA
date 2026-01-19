@@ -1,0 +1,72 @@
+name: "query_expansion_rag_langfuse_v1"
+description: "Query expansion RAG with dual LLMs - GPT-4o-mini expander, GPT-4o-mini generator"
+run_id: "exp-2026-01-14-query-expansion"
+
+pipeline_type: "query_expansion"
+
+retrieval_config:
+  strategy: "bm25"
+  top_k: 5  # Per query variant (4 queries × 5 = max 20 before dedup)
+  k1: 1.5
+  b: 0.75
+
+llm_configs:
+  expander:
+    provider: "openai"
+    model: "gpt-4o-mini"
+    temperature: 0.7  # Higher for diversity in expansions
+    max_tokens: 256
+    api_key_env_var: "OPENAI_API_KEY"
+
+  generator:
+    provider: "openai"
+    model: "gpt-4o-mini"
+    temperature: 0.0  # Deterministic for reproducibility
+    max_tokens: 512
+    api_key_env_var: "OPENAI_API_KEY"
+
+# Dataset configuration
+langfuse_dataset_name: "financial_qa_benchmark_v1"
+use_local_data: false
+
+# Tracing configuration
+flush_interval: 5.0
+flush_batch_size: 100
+enable_tracing: true
+max_concurrency: 1
+
+# Evaluation configuration
+enable_item_evaluators: true
+enable_run_evaluators: true
+
+item_evaluator_names:
+  - "token_f1"
+  - "semantic_similarity"
+  - "retrieval_precision"
+  - "retrieval_recall"
+
+run_evaluator_names:
+  - "average_accuracy"
+  - "aggregate_retrieval_metrics"
+
+evaluation_thresholds:
+  token_f1: 0.5
+  semantic_similarity: 0.7
+
+# Metadata
+langfuse_tags:
+  - "experiment:query_expansion"
+  - "expander:gpt-4o-mini"
+  - "generator:gpt-4o-mini"
+  - "retrieval:bm25"
+
+langfuse_metadata:
+  team: "research"
+  methodology: "query_expansion"
+  version: "v1"
+
+propagate_query_metadata: true
+
+# Pipeline-specific hyperparameters
+hyperparameters:
+  num_expanded_queries: 3  # M=3 (total 4 queries including original)

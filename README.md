@@ -6,7 +6,7 @@ A multi-agent Retrieval-Augmented Generation (RAG) system for answering financia
 
 This system evaluates different RAG architectures on the FinDER dataset (5,703 financial query-evidence-answer triplets), comparing:
 - **Baseline**: Single-agent RAG (query → retrieve → generate)
-- **Multi-Agent**: Specialized agents for query understanding, disambiguation, retrieval strategy, evidence fusion, and answer synthesis
+- **Query Expansion**: Multi-query RAG (expand → retrieve multiple → pool → generate)
 
 All development follows evaluation-first principles with metrics logged to Langfuse for performance tracking and regression detection.
 
@@ -36,61 +36,49 @@ cp .env.example .env
 
 ```bash
 # Run baseline single-agent RAG evaluation
-make eval-baseline
+python scripts/run_experiment.py experiments/configs/langfuse_baseline.yaml --max-items 10
 
-# This will:
-# - Process all 5,703 FinDER queries
-# - Use BM25 retrieval + GPT-3.5 generation (default config)
-# - Log to Langfuse with run_id: v0.0.0-baseline
-# - Generate summary report in data/reports/baseline_summary.md
-# - Expected runtime: ~2 hours (depends on API rate limits)
+# Uses BM25 retrieval + Claude Haiku generation
 ```
 
-### Run Multi-Agent Evaluation
+### Run Query Expansion Evaluation
 
 ```bash
-# Run multi-agent RAG evaluation
-make eval-multiagent
+# Run query expansion RAG with dual LLMs
+python scripts/run_experiment.py experiments/configs/query_expansion.yaml --max-items 10
 
-# Uses full multi-agent orchestration pipeline:
-# Query Understanding → Context Resolution → Retrieval → Evidence Fusion → Answer Synthesis
-# Logs to Langfuse with run_id: v1.0.0-multiagent
+# Uses:
+# - GPT-3.5 for query expansion (3 variants)
+# - BM25 retrieval (4 queries × 5 passages = max 20)
+# - Claude Haiku for answer generation
+# - Passage pooling and deduplication
 ```
 
 ## Project Structure
 
 ```
 src/
-├── agents/              # Multi-agent implementations
-│   ├── base.py          # Base agent interface
-│   ├── query_understanding.py
-│   ├── context_resolution.py
-│   ├── retrieval_strategy.py
-│   ├── evidence_fusion.py
-│   └── answer_synthesis.py
-├── data/                # Dataset handling
-│   ├── loader.py        # FinDER dataset loader
-│   ├── preprocessor.py  # Data validation and preprocessing
-│   └── indexer.py       # Vector index builder
-├── evaluation/          # Evaluation pipeline
-│   ├── metrics.py       # Accuracy, F1, precision, recall
-│   ├── runner.py        # Evaluation orchestration
-│   ├── logger.py        # Langfuse integration
-│   └── reporter.py      # Summary report generation
+├── rag/                 # RAG pipelines
+│   ├── baseline.py      # Single-agent RAG
+│   └── query_expansion.py  # Multi-query expansion RAG
 ├── retrieval/           # Retrieval implementations
 │   ├── bm25.py          # BM25 keyword search
 │   ├── dense.py         # Dense embedding search
 │   └── hybrid.py        # Hybrid retrieval
-├── rag/                 # RAG pipelines
-│   ├── baseline.py      # Single-agent RAG
-│   └── multiagent.py    # Multi-agent orchestration
+├── langfuse_integration/  # Experiment tracking
+│   ├── experiment_runner.py
+│   ├── evaluators.py
+│   └── models.py
+├── data_handler/        # Dataset handling
+│   ├── loader.py        # FinDER dataset loader
+│   └── models.py        # Data models
 ├── config/              # Configuration management
 │   └── experiments.py   # Experiment config loader
 └── utils/               # Shared utilities
     ├── llm_client.py    # LLM API wrapper
-    └── cache.py         # Disambiguation cache
+    └── cache.py         # Caching utilities
 
-tests/                   # Test suite
+scripts/                 # Entry points
 experiments/configs/     # Experiment configurations
 data/                    # Data directory (gitignored)
 ```
@@ -108,26 +96,48 @@ make eval-dev           # Run dev subset (fast iteration)
 make lint               # Run code quality checks
 make test               # Run unit/integration tests
 make clean              # Remove generated files
+
+# Data conversion
+python scripts/convert_arrow_to_text.py  # Convert Arrow dataset to individual text files
 ```
 
 ## Configuration
 
-Experiment configurations are stored in `experiments/configs/` as YAML files. Example:
+Experiment configurations are stored in `experiments/configs/` as YAML files.
+
+### Baseline RAG Example
 
 ```yaml
 name: "Baseline RAG Evaluation"
-description: "Simple retrieval-generation baseline"
-run_id: "v0.0.0-baseline"
 pipeline_type: "baseline"
 retrieval_config:
   strategy: "bm25"
   top_k: 5
 llm_configs:
   generator:
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
+```
+
+### Query Expansion RAG Example
+
+```yaml
+name: "Query Expansion RAG"
+pipeline_type: "query_expansion"
+retrieval_config:
+  strategy: "bm25"
+  top_k: 5
+llm_configs:
+  expander:
     provider: "openai"
     model: "gpt-3.5-turbo"
+    temperature: 0.7
+  generator:
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
     temperature: 0.0
-    max_tokens: 256
+hyperparameters:
+  num_expanded_queries: 3
 ```
 
 ## Evaluation Metrics

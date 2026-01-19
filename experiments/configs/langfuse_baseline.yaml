@@ -2,7 +2,7 @@
 # This configuration runs a baseline RAG pipeline with BM25 retrieval and Claude 3.5 Haiku
 
 name: "baseline_rag_langfuse_v1"
-description: "Baseline RAG pipeline with BM25 retrieval and Claude 3.5 Haiku generation"
+description: "Baseline RAG pipeline with BM25 retrieval and GPT-4o-mini generation"
 run_id: "exp-2026-01-10-baseline"
 
 # Pipeline Configuration
@@ -11,16 +11,19 @@ pipeline_type: "baseline"
 retrieval_config:
   strategy: "bm25"
   top_k: 5
-  embedding_model: null
+  embedding_model: "text-embedding-3-small"
   reranking: false
+  graphrag_model_config:
+    chat_model: "gpt-4o-mini"
+    embedding_model: "text-embedding-3-small"
 
 llm_configs:
   generator:
-    provider: "anthropic"
-    model: "claude-3-5-haiku-20241022"
+    provider: "openai"
+    model: "gpt-4o-mini"
     temperature: 0.0
     max_tokens: 512
-    api_key_env_var: "ANTHROPIC_API_KEY"
+    api_key_env_var: "OPENAI_API_KEY"
 
 # Langfuse Dataset Configuration
 langfuse_dataset_name: "financial_qa_benchmark_v1"
@@ -59,7 +62,7 @@ evaluation_thresholds:
 # Metadata and Tags
 langfuse_tags:
   - "experiment:baseline"
-  - "model:claude-3.5-haiku"
+  - "model:gpt-4o-mini"
   - "retrieval:bm25"
   - "env:development"
 

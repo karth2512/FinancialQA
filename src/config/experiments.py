@@ -32,6 +32,71 @@ class LLMConfig(BaseModel):
         return v
 
 
+class GraphRAGModelConfig(BaseModel):
+    """Configuration for GraphRAG custom models.
+
+    These settings control the Anthropic ChatModel and HuggingFace EmbeddingModel
+    used by GraphRAG for entity extraction, summarization, and semantic search.
+    No LiteLLM proxy required - models are used directly via Python API.
+    """
+
+    chat_model: str = Field(
+        "claude-3-5-haiku-20241022",
+        description="Anthropic model for entity extraction and summarization",
+    )
+    chat_temperature: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Temperature for chat model (0.0 = deterministic)",
+    )
+    chat_max_tokens: int = Field(
+        4096,
+        ge=256,
+        le=8192,
+        description="Max tokens for chat model responses",
+    )
+    embedding_model: str = Field(
+        "all-MiniLM-L6-v2",
+        description="HuggingFace model for embeddings (sentence-transformers)",
+    )
+    embedding_device: str = Field(
+        "cpu",
+        description="Device for embedding model: 'cpu', 'cuda', or 'cuda:0'",
+    )
+    embedding_batch_size: int = Field(
+        32,
+        ge=1,
+        le=256,
+        description="Batch size for embedding generation",
+    )
+
+    @field_validator("chat_model")
+    @classmethod
+    def validate_chat_model(cls, v: str) -> str:
+        """Validate chat model is a known Anthropic model."""
+        valid_prefixes = ("claude-3", "claude-2")
+        if not any(v.startswith(prefix) for prefix in valid_prefixes):
+            # Warning but don't fail - could be a new model
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Unrecognized Anthropic model: {v}. "
+                "Expected model starting with 'claude-3' or 'claude-2'."
+            )
+        return v
+
+    @field_validator("embedding_device")
+    @classmethod
+    def validate_embedding_device(cls, v: str) -> str:
+        """Validate embedding device."""
+        if not v.startswith(("cpu", "cuda", "mps")):
+            raise ValueError(
+                f"Invalid embedding_device: {v}. "
+                "Use 'cpu', 'cuda', 'cuda:0', or 'mps'."
+            )
+        return v
+
+
 class RetrievalConfig(BaseModel):
     """Configuration for retrieval strategy."""
 
@@ -50,11 +115,30 @@ class RetrievalConfig(BaseModel):
         0.5, ge=0.0, le=1.0, description="Weight for dense in hybrid mode"
     )
 
+    # GraphRAG-specific config
+    graphrag_root: Optional[str] = Field(
+        "./data/graphrag", description="Path to GraphRAG root directory"
+    )
+    graphrag_method: Optional[str] = Field(
+        "local", description="GraphRAG query method: 'local' or 'global'"
+    )
+    graphrag_community_level: Optional[int] = Field(
+        2, ge=0, le=5, description="Community level for global search (0-5)"
+    )
+    graphrag_response_type: Optional[str] = Field(
+        "Multiple Paragraphs", description="Response type for GraphRAG"
+    )
+    graphrag_model_config: Optional[GraphRAGModelConfig] = Field(
+        default=None,
+        description="Custom model configuration for GraphRAG (chat and embedding models)",
+    )
+
     @field_validator("strategy")
     @classmethod
     def validate_strategy(cls, v: str) -> str:
         """Validate retrieval strategy is supported."""
-        valid_strategies = {"bm25", "dense", "hybrid"}
+        valid_strategies = {"bm25", "dense", "hybrid", "graphrag"}
+        print(f"STRATEGY: {v}")
         if v not in valid_strategies:
             raise ValueError(f"strategy must be one of {valid_strategies}")
         return v
@@ -89,11 +173,13 @@ class ExperimentConfig(BaseModel):
     @classmethod
     def validate_pipeline_type(cls, v: str) -> str:
         """Validate pipeline type is supported."""
-        # Only baseline is currently implemented
-        # Future: Add support for multiagent and specialized pipelines
-        valid_types = {"baseline"}
+        valid_types = {"baseline", "query_expansion"}
         if v not in valid_types:
-            raise ValueError(f"pipeline_type must be 'baseline' (only supported type currently)")
+            raise ValueError(
+                f"pipeline_type must be one of {valid_types}. "
+                f"Got: {v}. "
+                f"Use 'query_expansion' for dual LLM query expansion RAG."
+            )
         return v
 
     @field_validator("orchestration_mode")
@@ -106,10 +192,33 @@ class ExperimentConfig(BaseModel):
                 raise ValueError(f"orchestration_mode must be one of {valid_modes}")
         return v
 
+    @field_validator("hyperparameters")
+    @classmethod
+    def validate_hyperparameters(cls, v: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate hyperparameters."""
+        if "num_expanded_queries" in v:
+            num_exp = v["num_expanded_queries"]
+            if not isinstance(num_exp, int):
+                raise ValueError("num_expanded_queries must be an integer")
+            if num_exp < 1 or num_exp > 10:
+                raise ValueError(
+                    f"num_expanded_queries must be between 1-10, got {num_exp}"
+                )
+        return v
+
     def model_post_init(self, __context: Any) -> None:
         """Validate pipeline-specific requirements."""
-        # Multi-agent validation removed - not currently implemented
-        pass
+        if self.pipeline_type == "query_expansion":
+            # Require both expander and generator LLM configs
+            if "expander" not in self.llm_configs:
+                raise ValueError(
+                    "Query expansion pipeline requires 'expander' LLM config in llm_configs. "
+                    "Example: llm_configs: {expander: {...}, generator: {...}}"
+                )
+            if "generator" not in self.llm_configs:
+                raise ValueError(
+                    "Query expansion pipeline requires 'generator' LLM config in llm_configs."
+                )
 
     @classmethod
     def from_yaml(cls, path: Path) -> "ExperimentConfig":

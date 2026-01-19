@@ -40,7 +40,8 @@ src/
 │   ├── models.py             # Pydantic models for results
 │   └── config.py             # Langfuse config helpers
 ├── rag/
-│   └── baseline.py           # BaselineRAG pipeline (CORE)
+│   ├── baseline.py           # BaselineRAG pipeline (CORE)
+│   └── query_expansion.py    # QueryExpansionRAG pipeline (NEW)
 ├── retrieval/
 │   ├── base.py               # Retriever interface
 │   ├── bm25.py               # BM25 retrieval (ACTIVELY USED)
@@ -69,6 +70,51 @@ data/                         # Data directory (gitignored)
 
 ## Detailed architecture design
 Refer [ARCHITECTURE.md](ARCHITECTURE.md)ARCHITECTURE.md
+
+## Supported RAG Pipelines
+
+### Baseline RAG
+- **Pipeline Type**: `baseline`
+- **Flow**: Query → Retrieve → Generate
+- **Config**: Single LLM (generator)
+- **Use Case**: Simple, fast, cost-effective RAG
+
+### Query Expansion RAG
+- **Pipeline Type**: `query_expansion`
+- **Flow**: Query → Expand (M variants) → Retrieve (M+1 times) → Pool & Deduplicate → Generate
+- **Config**: Dual LLM (expander + generator)
+- **Use Case**: Improved recall through query diversity
+- **Trade-offs**:
+  - +10-25% retrieval recall
+  - +50-100% latency
+  - +100-200% cost
+
+### Configuration Examples
+
+**Baseline**:
+```yaml
+pipeline_type: "baseline"
+llm_configs:
+  generator:
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
+```
+
+**Query Expansion**:
+```yaml
+pipeline_type: "query_expansion"
+llm_configs:
+  expander:
+    provider: "openai"
+    model: "gpt-3.5-turbo"
+    temperature: 0.7
+  generator:
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
+    temperature: 0.0
+hyperparameters:
+  num_expanded_queries: 3
+```
 
 ## Commands
 
@@ -103,7 +149,51 @@ Never use system Python or assume Python is available globally. All commands in 
 
 Python 3.9+ (requires 3.9 minimum for type hinting features and modern ML library support): Follow standard conventions
 
-## Recent Changes (2026-01-11 - Codebase Simplification - COMPLETED)
+## Parallel Subagents
+
+**IMPORTANT**: When performing tasks that can be parallelized, always use multiple subagents (Task tool) in parallel to maximize efficiency.
+
+### When to Use Parallel Subagents
+- Searching for multiple unrelated patterns or files
+- Researching different parts of the codebase simultaneously
+- Running independent operations that don't depend on each other's results
+- Exploring multiple hypotheses or approaches at once
+
+### How to Parallelize
+- Send a single message with multiple Task tool calls when the tasks are independent
+- Example: If searching for "authentication" AND "authorization" patterns, spawn two Explore agents in parallel rather than sequentially
+- Example: If researching how module A and module B work independently, use two codebase-researcher agents in parallel
+
+### Do NOT Parallelize When
+- One task depends on the result of another
+- Tasks need to be executed in a specific order
+- The tasks are modifying the same files
+
+## Recent Changes
+
+### 2026-01-14 - Query Expansion RAG - COMPLETED
+
+**NEW FEATURE**: Added query expansion RAG methodology for improved retrieval recall.
+
+- ✅ **QueryExpansionRAG pipeline** - Dual LLM setup (expander + generator)
+- ✅ **Multi-query retrieval** - Retrieve for original + M expanded queries
+- ✅ **Passage pooling** - Deduplicate by ID, keep highest scores
+- ✅ **Config support** - New pipeline_type: "query_expansion"
+- ✅ **Example config** - [experiments/configs/query_expansion.yaml](experiments/configs/query_expansion.yaml)
+
+**How it works**:
+1. Expander LLM generates M query variants (default M=3)
+2. BM25 retrieval for each variant (M+1 total retrievals)
+3. Pool passages and deduplicate by passage ID
+4. Re-rank by score (descending)
+5. Generator LLM produces final answer
+
+**Trade-offs**:
+- Recall: +10-25% (more relevant passages found)
+- Latency: +50-100% (expansion + multiple retrievals)
+- Cost: +100-200% (expansion tokens + more retrieval)
+
+### 2026-01-11 - Codebase Simplification - COMPLETED
 
 **CRITICAL FIX**: Experiment runner now uses actual RAG pipeline instead of placeholder code.
 
@@ -161,6 +251,91 @@ LANGFUSE_PUBLIC_KEY=pk-lf-...
 LANGFUSE_SECRET_KEY=sk-lf-...
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
+
+## GraphRAG
+
+GraphRAG uses OpenAI's `gpt-4o-mini` (cheapest model) for entity extraction and community detection.
+
+### Quick Start
+
+```bash
+# 1. Set API key in .env
+cp .env.example .env
+# Edit .env and add OPENAI_API_KEY
+
+# 2. Initialize GraphRAG (first time only)
+make graphrag-init
+
+# 3. Configure GraphRAG settings
+make graphrag-configure
+
+# 4. Prepare input data (copy pre-chunked FinDER text files)
+make graphrag-prepare-data
+
+# 5. Run indexing (30-90 min)
+make graphrag-index
+
+# 6. Inspect the generated index
+make graphrag-inspect
+
+# 7. Run experiments
+make graphrag-test        # Quick test with 10 items
+make graphrag-baseline    # Full baseline experiment
+make graphrag-global      # Global search experiment
+make graphrag-qe          # Query expansion + GraphRAG
+```
+
+### Architecture
+
+- **GraphRAG CLI** uses OpenAI API directly (`gpt-4o-mini`)
+- **Embeddings** use local sentence-transformers (no API calls)
+- **Data** is already pre-chunked in `data/finder_text/*.txt` (no additional chunking needed)
+
+### Key Files
+
+- GraphRAG workspace: `./ragtest/`
+- Index outputs: `./ragtest/output/*/artifacts/*.parquet`
+- Configuration scripts:
+  - [scripts/configure_graphrag.py](scripts/configure_graphrag.py) - Auto-configure GraphRAG settings
+  - [scripts/prepare_graphrag_input.py](scripts/prepare_graphrag_input.py) - Copy pre-chunked text files
+  - [scripts/inspect_graphrag_index.py](scripts/inspect_graphrag_index.py) - Inspect parquet outputs
+  - [scripts/graphrag_index.py](scripts/graphrag_index.py) - CLI wrapper for indexing
+
+### Cost & Performance
+
+**Indexing (one-time):**
+- Duration: 30-90 minutes
+- Cost: ~$1-2 USD (gpt-4o-mini is cheapest)
+- Input: ~3,000 pre-chunked passages
+
+**Querying (per experiment):**
+- Local search: 1-3s latency
+- Global search: 3-5s latency
+
+### Troubleshooting
+
+**GraphRAG workspace not initialized:**
+```bash
+# Initialize and configure
+make graphrag-init
+make graphrag-configure
+```
+
+**Input data missing:**
+```bash
+# Verify pre-chunked data exists
+dir data\finder_text\*.txt
+
+# Copy to GraphRAG input directory
+make graphrag-prepare-data
+```
+
+**OPENAI_API_KEY not set:**
+```bash
+# Add to .env file
+echo "OPENAI_API_KEY=sk-..." >> .env
+```
+
 ## Git Workflow
 
 **IMPORTANT**: Never create git commits automatically. All git operations (adding, commits, pushes, pull requests) will be handled manually by the user.
