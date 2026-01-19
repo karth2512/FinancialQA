@@ -53,7 +53,11 @@ def prepare_graphrag_input(
 
     for src_file in txt_files:
         dst_file = target_path / src_file.name
-        shutil.copy2(src_file, dst_file)
+        shutil.copyfile(src_file, dst_file)
+        # try:
+        #     shutil.copy2(src_file, dst_file)
+        # except:
+        #     logger.error(f"Skipping {src_file} due to permission error")
         total_size += dst_file.stat().st_size
         copied_count += 1
 

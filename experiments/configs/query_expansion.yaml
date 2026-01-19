@@ -1,5 +1,5 @@
 name: "query_expansion_rag_langfuse_v1"
-description: "Query expansion RAG with dual LLMs - Claude Haiku expander, Claude Haiku generator"
+description: "Query expansion RAG with dual LLMs - GPT-4o-mini expander, GPT-4o-mini generator"
 run_id: "exp-2026-01-14-query-expansion"
 
 pipeline_type: "query_expansion"
@@ -12,18 +12,18 @@ retrieval_config:
 
 llm_configs:
   expander:
-    provider: "anthropic"
-    model: "claude-3-5-haiku-20241022"
+    provider: "openai"
+    model: "gpt-4o-mini"
     temperature: 0.7  # Higher for diversity in expansions
     max_tokens: 256
-    api_key_env_var: "ANTHROPIC_API_KEY"
+    api_key_env_var: "OPENAI_API_KEY"
 
   generator:
-    provider: "anthropic"
-    model: "claude-3-5-haiku-20241022"
+    provider: "openai"
+    model: "gpt-4o-mini"
     temperature: 0.0  # Deterministic for reproducibility
     max_tokens: 512
-    api_key_env_var: "ANTHROPIC_API_KEY"
+    api_key_env_var: "OPENAI_API_KEY"
 
 # Dataset configuration
 langfuse_dataset_name: "financial_qa_benchmark_v1"
@@ -56,8 +56,8 @@ evaluation_thresholds:
 # Metadata
 langfuse_tags:
   - "experiment:query_expansion"
-  - "expander:claude-3.5-haiku"
-  - "generator:claude-3.5-haiku"
+  - "expander:gpt-4o-mini"
+  - "generator:gpt-4o-mini"
   - "retrieval:bm25"
 
 langfuse_metadata:

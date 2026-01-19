@@ -149,6 +149,26 @@ Never use system Python or assume Python is available globally. All commands in 
 
 Python 3.9+ (requires 3.9 minimum for type hinting features and modern ML library support): Follow standard conventions
 
+## Parallel Subagents
+
+**IMPORTANT**: When performing tasks that can be parallelized, always use multiple subagents (Task tool) in parallel to maximize efficiency.
+
+### When to Use Parallel Subagents
+- Searching for multiple unrelated patterns or files
+- Researching different parts of the codebase simultaneously
+- Running independent operations that don't depend on each other's results
+- Exploring multiple hypotheses or approaches at once
+
+### How to Parallelize
+- Send a single message with multiple Task tool calls when the tasks are independent
+- Example: If searching for "authentication" AND "authorization" patterns, spawn two Explore agents in parallel rather than sequentially
+- Example: If researching how module A and module B work independently, use two codebase-researcher agents in parallel
+
+### Do NOT Parallelize When
+- One task depends on the result of another
+- Tasks need to be executed in a specific order
+- The tasks are modifying the same files
+
 ## Recent Changes
 
 ### 2026-01-14 - Query Expansion RAG - COMPLETED

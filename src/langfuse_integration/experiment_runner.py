@@ -98,8 +98,19 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
             "method": retrieval_config.graphrag_method or "local",
             "top_k": retrieval_config.top_k,
             "community_level": retrieval_config.graphrag_community_level or 2,
-            "response_type": retrieval_config.graphrag_response_type or "Multiple Paragraphs",
+            "response_type": retrieval_config.graphrag_response_type
+            or "Multiple Paragraphs",
+            "embedding_model": retrieval_config.embedding_model
+            or "text-embedding-3-small",
         }
+        # Add model configuration if provided
+        if retrieval_config.graphrag_model_config:
+            retriever_config["chat_model"] = (
+                retrieval_config.graphrag_model_config.chat_model
+            )
+            retriever_config["embedding_model"] = (
+                retrieval_config.graphrag_model_config.embedding_model
+            )
         retriever = GraphRAGRetriever(retriever_config)
     else:
         raise ValueError(f"Unsupported retrieval strategy: {strategy}")
@@ -146,15 +157,16 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
         query = Query(
             id=input_data.get("id", "unknown"),
             text=query_text,
-            expected_answer="a",   # Not used but needs to have value for post init checks 
-            expected_evidence=["a"],  # Not used but needs to have value for post init checks 
+            expected_answer="a",  # Not used but needs to have value for post init checks
+            expected_evidence=[
+                "a"
+            ],  # Not used but needs to have value for post init checks
             metadata=None,
         )
 
         # Run RAG pipeline
         rag_result = rag_pipeline.process_query(
-            query=query,
-            top_k=retrieval_config.top_k
+            query=query, top_k=retrieval_config.top_k
         )
 
         # Format retrieved passages for Langfuse
@@ -238,8 +250,19 @@ def _create_query_expansion_task(config: LangfuseExperimentConfig) -> Callable:
             "method": retrieval_config.graphrag_method or "local",
             "top_k": retrieval_config.top_k,
             "community_level": retrieval_config.graphrag_community_level or 2,
-            "response_type": retrieval_config.graphrag_response_type or "Multiple Paragraphs",
+            "response_type": retrieval_config.graphrag_response_type
+            or "Multiple Paragraphs",
+            "embedding_model": retrieval_config.embedding_model
+            or "text-embedding-3-small",
         }
+        # Add model configuration if provided
+        if retrieval_config.graphrag_model_config:
+            retriever_config["chat_model"] = (
+                retrieval_config.graphrag_model_config.chat_model
+            )
+            retriever_config["embedding_model"] = (
+                retrieval_config.graphrag_model_config.embedding_model
+            )
         retriever = GraphRAGRetriever(retriever_config)
     else:
         raise ValueError(f"Unknown retrieval strategy: {strategy}")
@@ -299,8 +322,10 @@ def _create_query_expansion_task(config: LangfuseExperimentConfig) -> Callable:
         query = Query(
             id=input_data.get("id", "unknown"),
             text=query_text,
-            expected_answer="a", # Not used but needs to have value for post init checks 
-            expected_evidence=["a"],  # Not used but needs to have value for post init checks 
+            expected_answer="a",  # Not used but needs to have value for post init checks
+            expected_evidence=[
+                "a"
+            ],  # Not used but needs to have value for post init checks
             metadata=None,
         )
 
@@ -603,9 +628,11 @@ def run_langfuse_experiment(
         logger.info(f"Run evaluators: {len(run_evaluators)}")
 
         # Check if data is a DatasetClient or list
-        if hasattr(data, 'run_experiment'):
+        if hasattr(data, "run_experiment"):
             # Using Langfuse dataset - call dataset.run_experiment()
-            logger.info(f"Running experiment via dataset.run_experiment() on {config.langfuse_dataset_name}")
+            logger.info(
+                f"Running experiment via dataset.run_experiment() on {config.langfuse_dataset_name}"
+            )
             sdk_result = data.run_experiment(
                 name=config.name,
                 run_name=config.run_id,
@@ -618,7 +645,9 @@ def run_langfuse_experiment(
             )
         else:
             # Using local data list - call client.run_experiment()
-            logger.info("Running experiment via client.run_experiment() with local data")
+            logger.info(
+                "Running experiment via client.run_experiment() with local data"
+            )
             sdk_result = client.run_experiment(
                 name=config.name,
                 run_name=config.run_id,

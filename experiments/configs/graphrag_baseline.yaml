@@ -1,5 +1,5 @@
 # GraphRAG Baseline Experiment Configuration
-# Uses GraphRAG local search (entity-focused retrieval) with Claude 3.5 Haiku
+# Uses GraphRAG local search (entity-focused retrieval) with GPT-4o-mini
 # No LiteLLM proxy required - uses custom Anthropic ChatModel and HF EmbeddingModel
 
 name: "graphrag_baseline_local_v1"
@@ -18,15 +18,13 @@ retrieval_config:
   graphrag_method: "local"  # Entity-focused retrieval
   graphrag_community_level: 2  # Not used for local search
   graphrag_response_type: "Multiple Paragraphs"
-
+ 
   # GraphRAG model configuration (no LiteLLM proxy needed)
+  embedding_model: "text-embedding-3-small"
+  reranking: false
   graphrag_model_config:
-    chat_model: "claude-3-5-haiku-20241022"
-    chat_temperature: 0.0
-    chat_max_tokens: 4096
-    embedding_model: "all-MiniLM-L6-v2"
-    embedding_device: "cpu"
-    embedding_batch_size: 32
+    chat_model: "gpt-4o-mini"
+    embedding_model: "text-embedding-3-small"
 
   # BM25 settings (not used for graphrag, but required by schema)
   k1: 1.5
@@ -35,11 +33,11 @@ retrieval_config:
 # LLM Configuration (Generator only for baseline)
 llm_configs:
   generator:
-    provider: "anthropic"
-    model: "claude-3-5-haiku-20241022"
+    provider: "openai"
+    model: "gpt-4o-mini"
     temperature: 0.0
     max_tokens: 512
-    api_key_env_var: "ANTHROPIC_API_KEY"
+    api_key_env_var: "OPENAI_API_KEY"
 
 # Langfuse Dataset Configuration
 langfuse_dataset_name: "financial_qa_benchmark_v1"
@@ -78,7 +76,7 @@ evaluation_thresholds:
 # Tags and Metadata
 langfuse_tags:
   - "experiment:graphrag_baseline"
-  - "model:claude-3.5-haiku"
+  - "model:gpt-4o-mini"
   - "retrieval:graphrag_local"
   - "method:entity-focused"
 

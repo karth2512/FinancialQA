@@ -1,14 +1,13 @@
 """
-GraphRAG knowledge graph-based retrieval using Python library.
+GraphRAG knowledge graph-based retrieval using microsoft/graphrag SDK.
 
 This module implements GraphRAGRetriever which uses Microsoft GraphRAG's
-knowledge graph approach for entity-aware retrieval. Unlike the previous
-CLI-based implementation, this uses the Python library directly with
-custom Anthropic ChatModel and HuggingFace EmbeddingModel.
-
-No LiteLLM proxy required.
+built-in LocalSearch and GlobalSearch engines instead of custom implementations.
+Uses adapter classes to make Anthropic and HuggingFace models compatible with
+GraphRAG's ChatModel and EmbeddingModel protocols.
 """
 
+import os
 import time
 import logging
 import asyncio
@@ -16,6 +15,21 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 
 import pandas as pd
+from anthropic import Anthropic
+from sentence_transformers import SentenceTransformer
+
+# GraphRAG SDK imports
+from graphrag.query.indexer_adapters import (
+    read_indexer_entities,
+    read_indexer_relationships,
+    read_indexer_reports,
+    read_indexer_text_units,
+)
+from graphrag.config.models.graph_rag_config import GraphRagConfig
+from graphrag.config.models.language_model_config import LanguageModelConfig
+from graphrag.config.models.vector_store_schema_config import VectorStoreSchemaConfig
+from graphrag.query import factory as search_factory
+from graphrag.vector_stores.lancedb import LanceDBVectorStore
 
 from src.retrieval.base import RetrieverBase, RetrievalError, IndexNotBuiltError
 from src.data_handler.models import EvidencePassage, RetrievalResult, RetrievedPassage
@@ -25,17 +39,20 @@ logger = logging.getLogger(__name__)
 
 class GraphRAGRetriever(RetrieverBase):
     """
-    GraphRAG-based retrieval using Python library (not CLI).
+    GraphRAG-based retrieval using microsoft/graphrag SDK.
 
-    This retriever loads a pre-built GraphRAG index and supports two query modes:
+    This retriever loads a pre-built GraphRAG index and uses the SDK's
+    LocalSearch and GlobalSearch engines for retrieval.
+
+    Two query modes:
     - local: Entity-focused retrieval (specific entities and neighborhoods)
     - global: Community-level retrieval (high-level summaries)
 
-    Uses custom Anthropic ChatModel and HuggingFace EmbeddingModel
-    registered via src.graphrag_models, eliminating the need for LiteLLM proxy.
+    Uses adapter classes to make Anthropic and HuggingFace models compatible
+    with GraphRAG's ChatModel and EmbeddingModel protocols.
 
     Note: Requires pre-built GraphRAG index in the specified output directory.
-    Build index with: python scripts/graphrag_index_python.py
+    Build index with: python scripts/graphrag_index.py
     """
 
     def __init__(self, config: Dict[str, Any]):
@@ -44,7 +61,7 @@ class GraphRAGRetriever(RetrieverBase):
 
         Args:
             config: Configuration dict with keys:
-                - graphrag_root: Path to GraphRAG directory (default: "./data/graphrag")
+                - graphrag_root: Path to GraphRAG directory (default: "./ragtest")
                 - method: Query method "local" or "global" (default: "local")
                 - top_k: Number of results to return (default: 5)
                 - community_level: Community level for global search (default: 2)
@@ -54,7 +71,7 @@ class GraphRAGRetriever(RetrieverBase):
         """
         super().__init__(config)
 
-        self.graphrag_root = Path(config.get("graphrag_root", "./data/graphrag"))
+        self.graphrag_root = Path(config.get("graphrag_root", "./ragtest"))
         self.method = config.get("method", "local").lower()
         self.top_k = config.get("top_k", 5)
         self.community_level = config.get("community_level", 2)
@@ -62,7 +79,9 @@ class GraphRAGRetriever(RetrieverBase):
 
         # Model configuration
         self.chat_model_name = config.get("chat_model", "claude-3-5-haiku-20241022")
-        self.embedding_model_name = config.get("embedding_model", "all-MiniLM-L6-v2")
+        self.embedding_model_name = config.get(
+            "embedding_model", "text-embedding-3-small"
+        )
 
         # Validate method
         if self.method not in ["local", "global"]:
@@ -72,21 +91,21 @@ class GraphRAGRetriever(RetrieverBase):
 
         # Paths
         self.output_dir = self.graphrag_root / "output"
+        self.lancedb_path = self.output_dir / "lancedb"
 
         # Loaded data (initialized in index_corpus)
-        self.entities: Optional[pd.DataFrame] = None
-        self.relationships: Optional[pd.DataFrame] = None
-        self.communities: Optional[pd.DataFrame] = None
-        self.community_reports: Optional[pd.DataFrame] = None
-        self.text_units: Optional[pd.DataFrame] = None
+        self.entities = None
+        self.relationships = None
+        self.community_reports = None
+        self.text_units = None
+        self.communities = None
 
-        # Models (initialized in index_corpus)
-        self.chat_model: Optional[Any] = None
-        self.embedding_model: Optional[Any] = None
+        # GraphRAG config (initialized in index_corpus)
+        self.graphrag_config: Optional[GraphRagConfig] = None
+        self.vector_store: Optional[LanceDBVectorStore] = None
 
-        # Entity name to ID mapping for fast lookup
-        self._entity_name_to_id: Dict[str, str] = {}
-        self._entity_id_to_data: Dict[str, Dict] = {}
+        # Search engine (initialized in index_corpus)
+        self.search_engine = None
 
         logger.info(
             f"Initialized GraphRAGRetriever: method={self.method}, "
@@ -97,8 +116,8 @@ class GraphRAGRetriever(RetrieverBase):
         """
         Load pre-built GraphRAG index from parquet files.
 
-        This method doesn't build a new index, but loads an existing one
-        created by scripts/graphrag_index_python.py.
+        This method loads an existing index built by the GraphRAG CLI.
+        It does NOT build a new index from passages.
 
         Args:
             passages: Evidence passages (not used - index already built)
@@ -107,22 +126,24 @@ class GraphRAGRetriever(RetrieverBase):
             RetrievalError: If GraphRAG index not found or loading fails
         """
         try:
+            logger.info("===  Starting index_corpus ===")
             # Check if output directory exists
+            logger.info(f"Checking output directory: {self.output_dir}")
             if not self.output_dir.exists():
                 raise RetrievalError(
                     "graphrag",
                     f"GraphRAG output directory not found at {self.output_dir}. "
-                    "Run 'python scripts/graphrag_index_python.py' first to build the index.",
+                    "Run 'make graphrag-index' or 'python scripts/graphrag_index.py' first.",
                     "",
                 )
 
-            # Check for required parquet files
+            # Check for required parquet files (CORRECT NAMES)
             required_files = [
-                "create_final_entities.parquet",
-                "create_final_relationships.parquet",
-                "create_final_communities.parquet",
-                "create_final_community_reports.parquet",
-                "create_final_text_units.parquet",
+                "entities.parquet",
+                "relationships.parquet",
+                "communities.parquet",
+                "community_reports.parquet",
+                "text_units.parquet",
             ]
 
             missing_files = []
@@ -135,54 +156,87 @@ class GraphRAGRetriever(RetrieverBase):
                 raise RetrievalError(
                     "graphrag",
                     f"Missing required GraphRAG files: {', '.join(missing_files)}. "
-                    "Index may be incomplete. Re-run 'python scripts/graphrag_index_python.py'.",
+                    "Index may be incomplete. Re-run 'make graphrag-index'.",
                     "",
                 )
-
-            # Initialize custom models
-            logger.info("Initializing custom models for GraphRAG search...")
-            from src.graphrag_models import (
-                AnthropicChatModel,
-                HFEmbeddingModel,
-                register_models,
-            )
-
-            register_models()
-
-            self.chat_model = AnthropicChatModel(model=self.chat_model_name)
-            self.embedding_model = HFEmbeddingModel(model_name=self.embedding_model_name)
-
-            logger.info(f"  ✓ Chat model: {self.chat_model_name}")
-            logger.info(f"  ✓ Embedding model: {self.embedding_model_name}")
 
             # Load parquet files
             logger.info(f"Loading GraphRAG index from {self.output_dir}")
 
-            self.entities = pd.read_parquet(
-                self.output_dir / "create_final_entities.parquet"
+            logger.info("  Loading entities.parquet...")
+            entities_df = pd.read_parquet(self.output_dir / "entities.parquet")
+            logger.info("  Loading relationships.parquet...")
+            relationships_df = pd.read_parquet(
+                self.output_dir / "relationships.parquet"
             )
-            self.relationships = pd.read_parquet(
-                self.output_dir / "create_final_relationships.parquet"
-            )
-            self.communities = pd.read_parquet(
-                self.output_dir / "create_final_communities.parquet"
-            )
-            self.community_reports = pd.read_parquet(
-                self.output_dir / "create_final_community_reports.parquet"
-            )
-            self.text_units = pd.read_parquet(
-                self.output_dir / "create_final_text_units.parquet"
-            )
+            logger.info("  Loading communities.parquet...")
+            communities_df = pd.read_parquet(self.output_dir / "communities.parquet")
+            logger.info("  Loading community_reports.parquet...")
+            reports_df = pd.read_parquet(self.output_dir / "community_reports.parquet")
+            logger.info("  Loading text_units.parquet...")
+            text_units_df = pd.read_parquet(self.output_dir / "text_units.parquet")
 
             logger.info(
-                f"Loaded {len(self.entities)} entities, "
-                f"{len(self.relationships)} relationships, "
-                f"{len(self.communities)} communities, "
-                f"{len(self.text_units)} text units"
+                f"Loaded {len(entities_df)} entities, "
+                f"{len(relationships_df)} relationships, "
+                f"{len(communities_df)} communities, "
+                f"{len(reports_df)} community reports, "
+                f"{len(text_units_df)} text units"
             )
 
-            # Build lookup indices
-            self._build_lookup_indices()
+            # Convert DataFrames to GraphRAG models using SDK adapters
+            logger.info("Converting DataFrames to GraphRAG models...")
+
+            self.entities = read_indexer_entities(
+                entities_df, communities_df, self.community_level
+            )
+            self.relationships = read_indexer_relationships(relationships_df)
+            self.community_reports = read_indexer_reports(
+                reports_df, communities_df, self.community_level
+            )
+            self.text_units = read_indexer_text_units(text_units_df)
+            self.communities = communities_df  # Keep DataFrame for factory functions
+
+            logger.info("  ✓ Converted to GraphRAG entity/relationship models")
+
+            # Initialize vector store (LanceDB)
+            if self.lancedb_path.exists():
+                logger.info(
+                    f"Initializing LanceDB vector store from {self.lancedb_path}"
+                )
+
+                # Create VectorStoreSchemaConfig for the new API
+                # Note: index_name must match actual LanceDB table name
+                schema_config = VectorStoreSchemaConfig(
+                    index_name="default-entity-description",
+                    id_field="id",
+                    text_field="text",
+                    vector_field="vector",
+                    attributes_field="attributes",
+                )
+
+                # Initialize and connect to LanceDB
+                self.vector_store = LanceDBVectorStore(
+                    vector_store_schema_config=schema_config
+                )
+                self.vector_store.connect(db_uri=str(self.lancedb_path))
+                logger.info("  ✓ LanceDB vector store initialized")
+            else:
+                logger.warning(
+                    f"LanceDB directory not found at {self.lancedb_path}. "
+                    "Vector similarity search may not work optimally."
+                )
+                self.vector_store = None
+
+            # Create minimal GraphRAG config for model initialization
+            logger.info("Creating GraphRAG config for models...")
+            self._create_graphrag_config()
+
+            # Build search engine based on method
+            if self.method == "local":
+                self._build_local_search_engine()
+            else:
+                self._build_global_search_engine()
 
             self.is_indexed = True
             logger.info("GraphRAG index loaded successfully")
@@ -190,31 +244,126 @@ class GraphRAGRetriever(RetrieverBase):
         except RetrievalError:
             raise
         except Exception as e:
+            logger.error(f"Failed to load GraphRAG index: {e}", exc_info=True)
             raise RetrievalError(
                 "graphrag", f"Failed to load GraphRAG index: {str(e)}", ""
             )
 
-    def _build_lookup_indices(self) -> None:
-        """Build lookup indices for fast entity retrieval."""
-        if self.entities is None:
-            return
+    def _create_graphrag_config(self) -> None:
+        """
+        Create a minimal GraphRAG config for model initialization.
 
-        self._entity_name_to_id = {}
-        self._entity_id_to_data = {}
+        Auto-detects provider based on model name (OpenAI vs Anthropic).
+        """
+        # Detect provider based on model name
+        if self.chat_model_name.startswith("gpt-"):
+            provider = "openai"
+            api_key = os.getenv("OPENAI_API_KEY")
+        elif self.chat_model_name.startswith("claude-"):
+            provider = "anthropic"
+            api_key = os.getenv("ANTHROPIC_API_KEY")
+        else:
+            # Default to openai for other models
+            provider = "openai"
+            api_key = os.getenv("OPENAI_API_KEY")
+            logger.warning(
+                f"Unknown model prefix for {self.chat_model_name}, defaulting to OpenAI provider"
+            )
 
-        for _, row in self.entities.iterrows():
-            entity_id = row.get("id", "")
-            entity_name = row.get("name", "").lower()
+        # Create chat model config
+        chat_model_config = LanguageModelConfig(
+            model_provider=provider,
+            model=self.chat_model_name,
+            deployment_name=self.chat_model_name,
+            api_key=api_key,
+            type="openai_chat",
+            max_tokens=4096,
+            temperature=0.0,
+        )
+        embedding_model_config = LanguageModelConfig(
+            model_provider=provider,
+            model=self.embedding_model_name,
+            deployment_name=self.embedding_model_name,
+            api_key=api_key,
+            type="openai_embedding",
+        )
 
-            if entity_id and entity_name:
-                self._entity_name_to_id[entity_name] = entity_id
-                self._entity_id_to_data[entity_id] = row.to_dict()
+        # Create minimal GraphRagConfig
+        self.graphrag_config = GraphRagConfig(
+            root_dir=str(self.graphrag_root),
+            models={
+                "default_chat_model": chat_model_config,
+                "default_embedding_model": embedding_model_config,
+            },
+        )
 
-        logger.debug(f"Built lookup indices for {len(self._entity_id_to_data)} entities")
+        logger.info(
+            f"  ✓ Created GraphRAG config with {provider}/{self.chat_model_name}"
+        )
+
+    def _build_local_search_engine(self) -> None:
+        """
+        Build LocalSearch engine using GraphRAG factory function.
+
+        LocalSearch provides entity-focused retrieval with:
+        - Entity text embeddings for similarity search
+        - Text units associated with entities
+        - Relationship context
+        - Community context
+        """
+        logger.info("Building LocalSearch engine...")
+
+        # Use factory function to create search engine
+        self.search_engine = search_factory.get_local_search_engine(
+            config=self.graphrag_config,
+            reports=self.community_reports,
+            text_units=self.text_units,
+            entities=self.entities,
+            relationships=self.relationships,
+            covariates={},  # Empty covariates for now
+            description_embedding_store=self.vector_store,
+            response_type=self.response_type,
+        )
+
+        logger.info("  ✓ LocalSearch engine built")
+
+    def _build_global_search_engine(self) -> None:
+        """
+        Build GlobalSearch engine using GraphRAG factory function.
+
+        GlobalSearch provides community-level retrieval with:
+        - Community reports (hierarchical summaries)
+        - Map-reduce approach for comprehensive answers
+        - Multi-level community context
+        """
+        logger.info("Building GlobalSearch engine...")
+
+        # Convert communities DataFrame to list of Community objects
+        from graphrag.data_model.community import Community
+
+        communities_list = [
+            Community(
+                id=str(row["id"]),
+                level=int(row.get("level", 0)),
+                title=str(row.get("title", "")),
+            )
+            for _, row in self.communities.iterrows()
+        ]
+
+        # Use factory function to create search engine
+        self.search_engine = search_factory.get_global_search_engine(
+            config=self.graphrag_config,
+            reports=self.community_reports,
+            entities=self.entities,
+            communities=communities_list,
+            response_type=self.response_type,
+        )
+
+        logger.info("  ✓ GlobalSearch engine built")
 
     def retrieve(self, query_text: str, top_k: int = 5) -> RetrievalResult:
         """
-        Retrieve relevant passages using GraphRAG Python API.
+        Retrieve relevant passages using GraphRAG SDK search engines.
 
         Args:
             query_text: Query string
@@ -236,20 +385,37 @@ class GraphRAGRetriever(RetrieverBase):
             # Use config top_k if not overridden
             k = top_k if top_k != 5 else self.top_k
 
-            # Perform GraphRAG search based on method
-            if self.method == "local":
-                retrieved_passages = self._local_search(query_text, k)
-                strategy = "graphrag_local"
-            else:  # global
-                retrieved_passages = self._global_search(query_text, k)
-                strategy = "graphrag_global"
+            # Perform GraphRAG search using SDK (async wrapped in sync)
+            logger.info(
+                f"Performing GraphRAG {self.method} search: {query_text[:50]}..."
+            )
+
+            search_result = self.search_engine.search(query=query_text)
+
+            # Convert GraphRAG SearchResult to List[RetrievedPassage]
+            retrieved_passages = self._convert_to_passages(
+                search_result=search_result,
+                query_text=query_text,
+                top_k=k,
+            )
 
             retrieval_time = time.time() - start_time
 
+            logger.info(
+                f"GraphRAG {self.method} search returned {len(retrieved_passages)} passages "
+                f"in {retrieval_time:.2f}s"
+            )
+
+            # Generate query_id from query text hash for uniqueness
+            import hashlib
+
+            query_hash = hashlib.md5(query_text.encode()).hexdigest()[:8]
+            query_id = f"graphrag_{query_hash}"
+
             return RetrievalResult(
-                query_id="",  # Will be set by caller
+                query_id=query_id,
                 retrieved_passages=retrieved_passages,
-                strategy=strategy,
+                strategy=f"graphrag_{self.method}",
                 retrieval_time_seconds=retrieval_time,
                 metadata={
                     "method": self.method,
@@ -260,327 +426,156 @@ class GraphRAGRetriever(RetrieverBase):
                     "response_type": self.response_type,
                     "chat_model": self.chat_model_name,
                     "embedding_model": self.embedding_model_name,
+                    "has_context_data": hasattr(search_result, "context_data"),
                 },
             )
 
         except Exception as e:
+            logger.error(f"GraphRAG {self.method} search failed: {e}", exc_info=True)
             raise RetrievalError(
                 f"graphrag_{self.method}",
                 f"GraphRAG {self.method} search failed: {str(e)}",
                 query_text,
             )
 
-    def _local_search(self, query_text: str, top_k: int) -> List[RetrievedPassage]:
+    def _convert_to_passages(
+        self,
+        search_result: Any,
+        query_text: str,
+        top_k: int,
+    ) -> List[RetrievedPassage]:
         """
-        Perform local search (entity-focused retrieval).
+        Convert GraphRAG SearchResult to List[RetrievedPassage].
 
-        Local search:
-        1. Extract entities mentioned in the query
-        2. Find related entities and their neighborhoods
-        3. Retrieve relevant text units
-        4. Generate a synthesized response
+        GraphRAG returns a synthesized response, not individual passages.
+        We extract source passages from context_data if available, or use
+        the synthesized response as a single passage.
 
         Args:
-            query_text: Query string
-            top_k: Number of results
+            search_result: GraphRAG SearchResult object
+            query_text: Original query text
+            top_k: Number of passages to return
 
         Returns:
             List of RetrievedPassage objects
         """
-        logger.info(f"Performing GraphRAG local search: {query_text[:50]}...")
+        passages = []
 
-        if (
-            self.entities is None
-            or self.text_units is None
-            or self.chat_model is None
-            or self.embedding_model is None
-        ):
-            logger.error("GraphRAG index not properly loaded")
-            return []
+        # Extract response text
+        response_text = getattr(search_result, "response", "")
+        context_data = getattr(search_result, "context_data", {})
 
-        try:
-            # Step 1: Find relevant entities using embedding similarity
-            relevant_entities = self._find_relevant_entities(query_text, top_k * 2)
+        # Try to extract source passages from context_data
+        if context_data and isinstance(context_data, dict):
+            # Local search may have 'sources' or 'text_units'
+            # Global search may have 'reports' or 'community_reports'
 
-            # Step 2: Get text units for relevant entities
-            relevant_text_units = self._get_entity_text_units(relevant_entities)
+            sources = context_data.get("sources", [])
+            reports = context_data.get("reports", [])
 
-            # Step 3: Score and rank text units
-            passages = self._create_passages_from_text_units(
-                relevant_text_units, query_text, "local", top_k
+            # Handle both list and DataFrame types for sources/reports
+            has_sources = sources is not None and (
+                (isinstance(sources, list) and len(sources) > 0)
+                or (hasattr(sources, "empty") and not sources.empty)
+            )
+            has_reports = reports is not None and (
+                (isinstance(reports, list) and len(reports) > 0)
+                or (hasattr(reports, "empty") and not reports.empty)
             )
 
-            logger.info(f"Local search returned {len(passages)} passages")
-            return passages
+            if self.method == "local" and has_sources:
+                # Extract text units from local search context
+                for idx, source in enumerate(sources[:top_k]):
+                    if isinstance(source, dict):
+                        text = source.get("text", "")
+                        source_id = source.get("id", f"local_{idx}")
+                    else:
+                        # If source is a string, use it directly
+                        text = str(source)
+                        source_id = f"local_{idx}"
 
-        except Exception as e:
-            logger.error(f"Local search failed: {e}")
-            return []
+                    if not text.strip():
+                        continue
 
-    def _global_search(self, query_text: str, top_k: int) -> List[RetrievedPassage]:
-        """
-        Perform global search (community-level retrieval).
-
-        Global search:
-        1. Find relevant communities based on query
-        2. Use community summaries to answer high-level questions
-        3. Aggregate information from community reports
-
-        Args:
-            query_text: Query string
-            top_k: Number of results
-
-        Returns:
-            List of RetrievedPassage objects
-        """
-        logger.info(f"Performing GraphRAG global search: {query_text[:50]}...")
-
-        if self.community_reports is None or self.chat_model is None:
-            logger.error("GraphRAG index not properly loaded")
-            return []
-
-        try:
-            # Step 1: Find relevant community reports
-            relevant_reports = self._find_relevant_community_reports(
-                query_text, top_k * 2
-            )
-
-            # Step 2: Create passages from community reports
-            passages = self._create_passages_from_reports(
-                relevant_reports, query_text, top_k
-            )
-
-            logger.info(f"Global search returned {len(passages)} passages")
-            return passages
-
-        except Exception as e:
-            logger.error(f"Global search failed: {e}")
-            return []
-
-    def _find_relevant_entities(
-        self, query_text: str, limit: int
-    ) -> List[Dict[str, Any]]:
-        """Find entities relevant to the query using embedding similarity."""
-        if self.entities is None or self.embedding_model is None:
-            return []
-
-        # Generate query embedding
-        query_embedding = self.embedding_model.embed([query_text])[0]
-
-        # Score entities by embedding similarity
-        scored_entities = []
-
-        for _, row in self.entities.iterrows():
-            entity_embedding = row.get("description_embedding")
-
-            if entity_embedding is not None and isinstance(entity_embedding, list):
-                # Calculate cosine similarity
-                score = self._cosine_similarity(query_embedding, entity_embedding)
-                scored_entities.append(
-                    {
-                        "id": row.get("id"),
-                        "name": row.get("name"),
-                        "type": row.get("type"),
-                        "description": row.get("description"),
-                        "text_unit_ids": row.get("text_unit_ids", []),
-                        "score": score,
-                    }
-                )
-            else:
-                # Fallback: simple text matching
-                name = str(row.get("name", "")).lower()
-                desc = str(row.get("description", "")).lower()
-                query_lower = query_text.lower()
-
-                if name in query_lower or any(
-                    word in desc for word in query_lower.split()
-                ):
-                    scored_entities.append(
-                        {
-                            "id": row.get("id"),
-                            "name": row.get("name"),
-                            "type": row.get("type"),
-                            "description": row.get("description"),
-                            "text_unit_ids": row.get("text_unit_ids", []),
-                            "score": 0.5,
-                        }
+                    evidence_passage = EvidencePassage(
+                        id=f"graphrag_local_{source_id}",
+                        text=text,
+                        document_id="graphrag_local",
+                        metadata={
+                            "source": "graphrag_local_search",
+                            "query": query_text,
+                            "method": "local",
+                        },
                     )
 
-        # Sort by score and return top results
-        scored_entities.sort(key=lambda x: x["score"], reverse=True)
-        return scored_entities[:limit]
+                    passages.append(
+                        RetrievedPassage(
+                            passage=evidence_passage,
+                            score=1.0 / (idx + 1),  # Descending score by rank
+                            rank=idx + 1,
+                            is_relevant=None,
+                        )
+                    )
 
-    def _get_entity_text_units(
-        self, entities: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """Get text units associated with entities."""
-        if self.text_units is None:
-            return []
+            elif self.method == "global" and has_reports:
+                # Extract community reports from global search context
+                for idx, report in enumerate(reports[:top_k]):
+                    if isinstance(report, dict):
+                        text = report.get("content", "") or report.get("summary", "")
+                        report_id = report.get("id", f"global_{idx}")
+                    else:
+                        text = str(report)
+                        report_id = f"global_{idx}"
 
-        # Collect all text unit IDs from entities
-        text_unit_ids = set()
-        for entity in entities:
-            tu_ids = entity.get("text_unit_ids", [])
-            if isinstance(tu_ids, list):
-                text_unit_ids.update(tu_ids)
+                    if not text.strip():
+                        continue
 
-        # Fetch text units
-        text_units = []
-        for _, row in self.text_units.iterrows():
-            tu_id = row.get("id")
-            if tu_id in text_unit_ids:
-                text_units.append(
-                    {
-                        "id": tu_id,
-                        "text": row.get("text", ""),
-                        "n_tokens": row.get("n_tokens", 0),
-                    }
+                    evidence_passage = EvidencePassage(
+                        id=f"graphrag_global_{report_id}",
+                        text=text,
+                        document_id="graphrag_global",
+                        metadata={
+                            "source": "graphrag_global_search",
+                            "query": query_text,
+                            "method": "global",
+                        },
+                    )
+
+                    passages.append(
+                        RetrievedPassage(
+                            passage=evidence_passage,
+                            score=1.0 / (idx + 1),
+                            rank=idx + 1,
+                            is_relevant=None,
+                        )
+                    )
+
+        # Fallback: Use synthesized response as single passage
+        if not passages and response_text.strip():
+            logger.warning(
+                "No source passages found in context_data. "
+                "Using synthesized response as single passage."
+            )
+
+            evidence_passage = EvidencePassage(
+                id=f"graphrag_{self.method}_response",
+                text=response_text,
+                document_id=f"graphrag_{self.method}",
+                metadata={
+                    "source": f"graphrag_{self.method}_search",
+                    "query": query_text,
+                    "method": self.method,
+                    "note": "Synthesized response from GraphRAG (no individual source passages)",
+                },
+            )
+
+            passages.append(
+                RetrievedPassage(
+                    passage=evidence_passage,
+                    score=1.0,
+                    rank=1,
+                    is_relevant=None,
                 )
-
-        return text_units
-
-    def _find_relevant_community_reports(
-        self, query_text: str, limit: int
-    ) -> List[Dict[str, Any]]:
-        """Find community reports relevant to the query."""
-        if self.community_reports is None or self.embedding_model is None:
-            return []
-
-        # Generate query embedding
-        query_embedding = self.embedding_model.embed([query_text])[0]
-
-        # Score reports by similarity
-        scored_reports = []
-
-        for _, row in self.community_reports.iterrows():
-            summary = row.get("summary", "")
-            title = row.get("title", "")
-
-            # Generate embedding for summary
-            if summary:
-                report_embedding = self.embedding_model.embed([summary])[0]
-                score = self._cosine_similarity(query_embedding, report_embedding)
-            else:
-                # Fallback text matching
-                query_lower = query_text.lower()
-                if any(word in title.lower() for word in query_lower.split()):
-                    score = 0.3
-                else:
-                    score = 0.1
-
-            scored_reports.append(
-                {
-                    "id": row.get("id"),
-                    "community_id": row.get("community_id"),
-                    "title": title,
-                    "summary": summary,
-                    "full_content": row.get("full_content", summary),
-                    "rank": row.get("rank", 1.0),
-                    "level": row.get("level", 0),
-                    "score": score,
-                }
             )
-
-        # Sort by score and return top results
-        scored_reports.sort(key=lambda x: x["score"], reverse=True)
-        return scored_reports[:limit]
-
-    def _create_passages_from_text_units(
-        self,
-        text_units: List[Dict[str, Any]],
-        query_text: str,
-        method: str,
-        top_k: int,
-    ) -> List[RetrievedPassage]:
-        """Create RetrievedPassage objects from text units."""
-        passages = []
-
-        for idx, tu in enumerate(text_units[:top_k]):
-            text = tu.get("text", "")
-            if not text:
-                continue
-
-            passage_id = f"graphrag_{method}_{tu.get('id', idx)}"
-
-            evidence_passage = EvidencePassage(
-                id=passage_id,
-                text=text,
-                document_id=f"graphrag_{method}",
-                metadata={
-                    "source": f"graphrag_{method}_search",
-                    "query": query_text,
-                    "method": method,
-                    "text_unit_id": tu.get("id"),
-                },
-            )
-
-            retrieved_passage = RetrievedPassage(
-                passage=evidence_passage,
-                score=1.0 / (idx + 1),  # Descending score by rank
-                rank=idx + 1,
-                is_relevant=None,
-            )
-            passages.append(retrieved_passage)
 
         return passages
-
-    def _create_passages_from_reports(
-        self,
-        reports: List[Dict[str, Any]],
-        query_text: str,
-        top_k: int,
-    ) -> List[RetrievedPassage]:
-        """Create RetrievedPassage objects from community reports."""
-        passages = []
-
-        for idx, report in enumerate(reports[:top_k]):
-            # Use full content if available, otherwise summary
-            text = report.get("full_content") or report.get("summary", "")
-            if not text:
-                continue
-
-            passage_id = f"graphrag_global_{report.get('id', idx)}"
-
-            evidence_passage = EvidencePassage(
-                id=passage_id,
-                text=text,
-                document_id="graphrag_global",
-                metadata={
-                    "source": "graphrag_global_search",
-                    "query": query_text,
-                    "method": "global",
-                    "community_id": report.get("community_id"),
-                    "title": report.get("title"),
-                    "level": report.get("level"),
-                },
-            )
-
-            # Use report's score if available
-            score = report.get("score", 1.0 / (idx + 1))
-
-            retrieved_passage = RetrievedPassage(
-                passage=evidence_passage,
-                score=float(score),
-                rank=idx + 1,
-                is_relevant=None,
-            )
-            passages.append(retrieved_passage)
-
-        return passages
-
-    @staticmethod
-    def _cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
-        """Calculate cosine similarity between two vectors."""
-        import numpy as np
-
-        v1 = np.array(vec1)
-        v2 = np.array(vec2)
-
-        dot_product = np.dot(v1, v2)
-        norm1 = np.linalg.norm(v1)
-        norm2 = np.linalg.norm(v2)
-
-        if norm1 == 0 or norm2 == 0:
-            return 0.0
-
-        return float(dot_product / (norm1 * norm2))

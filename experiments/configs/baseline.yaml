@@ -1,5 +1,5 @@
 name: "Baseline RAG Evaluation"
-description: "Simple retrieval-generation baseline with BM25 and Claude 3.5 Haiku"
+description: "Simple retrieval-generation baseline with BM25 and GPT-4o-mini"
 run_id: "v0.0.0-baseline"
 pipeline_type: "baseline"
 
@@ -11,11 +11,11 @@ retrieval_config:
 
 llm_configs:
   generator:
-    provider: "anthropic"
-    model: "claude-3-5-haiku-20241022"
+    provider: "openai"
+    model: "gpt-4o-mini"
     temperature: 0.0
     max_tokens: 256
-    api_key_env_var: "ANTHROPIC_API_KEY"
+    api_key_env_var: "OPENAI_API_KEY"
 
 hyperparameters: {}
   # Optional: subset for testing
