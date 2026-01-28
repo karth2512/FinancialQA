@@ -112,6 +112,22 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
                 retrieval_config.graphrag_model_config.embedding_model
             )
         retriever = GraphRAGRetriever(retriever_config)
+    elif strategy == "hierarchical":
+        # Get hierarchical config
+        hierarchical_config = {
+            "hierarchical_chunk_sizes": retrieval_config.hierarchical_chunk_sizes,
+            "hierarchical_chunk_overlap": retrieval_config.hierarchical_chunk_overlap,
+            "hierarchical_merge_threshold": retrieval_config.hierarchical_merge_threshold,
+            "embedding_model": retrieval_config.embedding_model or "all-MiniLM-L6-v2",
+            "top_k": retrieval_config.top_k,
+        }
+
+        # Create hierarchical retriever
+        from src.retrieval.llamaindex_hierarchical import (
+            LlamaIndexHierarchicalRetriever,
+        )
+
+        retriever = LlamaIndexHierarchicalRetriever(hierarchical_config)
     else:
         raise ValueError(f"Unsupported retrieval strategy: {strategy}")
 
@@ -361,10 +377,6 @@ def _create_query_expansion_task(config: LangfuseExperimentConfig) -> Callable:
         return result
 
     return query_expansion_task
-
-
-# Multi-agent task creation removed - not implemented
-# If multi-agent RAG is needed in the future, implement fresh based on requirements
 
 
 def _initialize_langfuse_client(

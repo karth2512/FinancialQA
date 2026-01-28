@@ -103,10 +103,6 @@ src/
 │   ├── __init__.py
 │   ├── llm_client.py        # LLM abstraction (OpenAI, Anthropic, local)
 │   └── cache.py             # Caching utilities
-│
-└── agents/                  # Placeholder (empty __init__.py only)
-    └── __init__.py
-
 scripts/
 ├── run_experiment.py         # Main entry point for experiments
 ├── upload_dataset.py         # Upload dataset to Langfuse
@@ -592,7 +588,6 @@ def compute_average_accuracy(*, item_results, **kwargs):
 
 ### Not Supported / Broken
 - GraphRAG retrieval (missing `src/graphrag_models/` module)
-- Multi-agent pipelines (scaffolding removed, only empty `src/agents/__init__.py`)
 - Local data loading (marked TODO in experiment_runner.py)
 - Reranking (config option exists but not implemented)
 

@@ -1,5 +1,5 @@
 """
-Data models for the FinDER Multi-Agent RAG System.
+Data models for the FinDER RAG System.
 
 This module defines the core data structures used throughout the system,
 including queries, evidence passages, and retrieval results.
@@ -133,9 +133,10 @@ class RetrievalResult:
             "hybrid",
             "graphrag_local",
             "graphrag_global",
+            "hierarchical",
         }:
             raise ValueError(
-                "strategy must be one of: bm25, dense, hybrid, graphrag_local, graphrag_global"
+                "strategy must be one of: bm25, dense, hybrid, graphrag_local, graphrag_global, hierarchical"
             )
         if self.retrieval_time_seconds < 0:
             raise ValueError("retrieval_time_seconds must be non-negative")
