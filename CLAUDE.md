@@ -1,27 +1,8 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
-
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
-
 # FinancialQA Development Guidelines
 
 Auto-generated from all feature plans. Last updated: 2026-01-11
 
-**NOTE:** This codebase has been simplified to focus on the core workflow: **config-driven Langchain RAG experiments with Langfuse tracking**. Multi-agent scaffolding and unused evaluation systems have been removed.
+**NOTE:** This codebase focuses on the core workflow: **config-driven advanced RAG experiments with Langfuse tracking**. The system supports multiple RAG methodologies (baseline, query expansion) with different retrieval strategies.
 
 ## Active Technologies
 
@@ -201,7 +182,6 @@ Python 3.9+ (requires 3.9 minimum for type hinting features and modern ML librar
 - ✅ **Fixed experiment runner** to use real BaselineRAG with BM25 retrieval
 - ✅ **Deleted ~900 lines of unused code** (~60% reduction):
   - `src/data_handler/preprocessor.py` (315 lines) - never imported
-  - `src/agents/base.py` (146 lines) - multi-agent scaffolding without implementations
   - `src/langfuse_integration/analysis.py` (~400 lines) - not used by main workflow
   - `src/langfuse_integration/client.py` (~50 lines) - redundant
   - `src/evaluation/runner.py`, `reporter.py` - old evaluation system
@@ -211,7 +191,7 @@ Python 3.9+ (requires 3.9 minimum for type hinting features and modern ML librar
 - ✅ **Marked dense/hybrid retrieval** as not actively tested in [indexer.py](src/data_handler/indexer.py)
 
 ### What to Know
-- **Only baseline RAG pipeline is supported** - multi-agent removed, will be reimplemented when needed
+- **Baseline and Query Expansion RAG pipelines are supported** - additional advanced RAG methods can be added
 - **BM25 is the primary retrieval strategy** - dense/hybrid exist but aren't actively tested
 - **All experiments must use Langfuse** - old evaluation system removed
 - **One config file per experiment** - experiment-specific settings in YAML

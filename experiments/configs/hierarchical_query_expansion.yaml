@@ -1,0 +1,39 @@
+name: "hierarchical_with_query_expansion"
+description: "Query expansion + hierarchical for maximum recall and context"
+run_id: "exp-hierarchical-qe-001"
+pipeline_type: "query_expansion"  # Uses QueryExpansionRAG
+
+retrieval_config:
+  strategy: "hierarchical"
+  top_k: 5
+
+  # Hierarchical config
+  hierarchical_chunk_sizes: [2048, 512, 128]
+  hierarchical_chunk_overlap: 20
+  hierarchical_merge_threshold: 0.5
+
+  # Embedding config
+  embedding_model: "all-MiniLM-L6-v2"
+
+llm_configs:
+  expander:
+    provider: "openai"
+    model: "gpt-4o-mini"
+    temperature: 0.7  # Diverse query variants
+    max_tokens: 256
+    api_key_env_var: "OPENAI_API_KEY"
+
+  generator:
+    provider: "anthropic"
+    model: "claude-3-5-haiku-20241022"
+    temperature: 0.0
+    max_tokens: 512
+    api_key_env_var: "ANTHROPIC_API_KEY"
+
+hyperparameters:
+  num_expanded_queries: 3  # Original + 3 variants
+
+langfuse_dataset_name: "financial_qa_benchmark_v1"
+enable_item_evaluators: true
+item_evaluator_names: ["token_f1", "semantic_similarity", "retrieval_precision", "retrieval_recall"]
+run_evaluator_names: ["average_accuracy", "aggregate_retrieval_metrics"]

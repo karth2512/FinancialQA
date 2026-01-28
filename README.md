@@ -1,12 +1,12 @@
-# FinDER Multi-Agent Financial RAG System
+# FinDER Advanced RAG System
 
-A multi-agent Retrieval-Augmented Generation (RAG) system for answering financial questions using the FinDER dataset. This project implements baseline and multi-agent approaches with comprehensive evaluation and observability through Langfuse.
+An advanced Retrieval-Augmented Generation (RAG) system for answering financial questions using the FinDER dataset. This project implements and compares different RAG methodologies with comprehensive evaluation and observability through Langfuse.
 
 ## Overview
 
 This system evaluates different RAG architectures on the FinDER dataset (5,703 financial query-evidence-answer triplets), comparing:
-- **Baseline**: Single-agent RAG (query → retrieve → generate)
-- **Query Expansion**: Multi-query RAG (expand → retrieve multiple → pool → generate)
+- **Baseline RAG**: Simple pipeline (query → retrieve → generate)
+- **Query Expansion RAG**: Multi-query pipeline (expand → retrieve multiple → pool → generate)
 
 All development follows evaluation-first principles with metrics logged to Langfuse for performance tracking and regression detection.
 
@@ -35,7 +35,7 @@ cp .env.example .env
 ### Run Baseline Evaluation
 
 ```bash
-# Run baseline single-agent RAG evaluation
+# Run baseline RAG evaluation
 python scripts/run_experiment.py experiments/configs/langfuse_baseline.yaml --max-items 10
 
 # Uses BM25 retrieval + Claude Haiku generation
@@ -59,7 +59,7 @@ python scripts/run_experiment.py experiments/configs/query_expansion.yaml --max-
 ```
 src/
 ├── rag/                 # RAG pipelines
-│   ├── baseline.py      # Single-agent RAG
+│   ├── baseline.py      # Baseline RAG
 │   └── query_expansion.py  # Multi-query expansion RAG
 ├── retrieval/           # Retrieval implementations
 │   ├── bm25.py          # BM25 keyword search
@@ -91,7 +91,6 @@ make install            # Install dependencies (venv exists)
 make download-data      # Download FinDER dataset
 make eval               # Run latest evaluation config
 make eval-baseline      # Run baseline evaluation
-make eval-multiagent    # Run multi-agent evaluation
 make eval-dev           # Run dev subset (fast iteration)
 make lint               # Run code quality checks
 make test               # Run unit/integration tests
@@ -167,7 +166,6 @@ The system tracks comprehensive metrics for each evaluation run:
 All evaluation runs are logged to Langfuse with:
 - Unique `run_id` or version identifier
 - Complete query traces (input, retrieval, generation, metrics)
-- Agent decision logs (for multi-agent runs)
 - Aggregate metrics and performance breakdowns
 
 View results at: https://cloud.langfuse.com

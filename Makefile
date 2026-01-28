@@ -7,17 +7,16 @@ else
     PIP := $(VENV)/bin/pip
 endif
 
-.PHONY: setup install download-data validate eval eval-baseline eval-multiagent eval-dev run-experiment run-qe-test graphrag-init graphrag-configure graphrag-prepare-data graphrag-index graphrag-index-python graphrag-inspect graphrag-test graphrag-baseline graphrag-global graphrag-qe lint test clean help
+.PHONY: setup install download-data validate eval eval-baseline eval-dev run-experiment run-qe-test graphrag-init graphrag-configure graphrag-prepare-data graphrag-index graphrag-index-python graphrag-inspect graphrag-test graphrag-baseline graphrag-global graphrag-qe lint test clean help
 
 help:
-	@echo "FinDER Multi-Agent RAG System - Available targets:"
+	@echo "FinDER Advanced RAG System - Available targets:"
 	@echo "  make setup           - Create virtual environment and install dependencies"
 	@echo "  make install         - Install dependencies (assumes venv exists)"
 	@echo "  make validate        - Validate setup and configuration"
 	@echo "  make download-data   - Download FinDER dataset from HuggingFace"
 	@echo "  make eval            - Run latest evaluation configuration"
 	@echo "  make eval-baseline   - Run baseline RAG evaluation"
-	@echo "  make eval-multiagent - Run multi-agent RAG evaluation"
 	@echo "  make eval-dev        - Run development subset evaluation (fast iteration)"
 	@echo "  make run-experiment  - Run Langfuse experiment (CONFIG=path/to/config.yaml)"
 	@echo "  make run-qe-test     - Run query expansion experiment with 10 items (quick test)"
@@ -60,25 +59,13 @@ download-data:
 lf-run:
 	$(PYTHON) scripts/upload_dataset.py --name financial_qa_benchmark_v1 --filter all --yes --max-items 10
 
-eval:
-	$(PYTHON) -m src.evaluation.runner --config experiments/configs/latest.yaml
-
-eval-baseline:
-	$(PYTHON) -m src.evaluation.runner --config experiments/configs/baseline.yaml
-
-eval-multiagent:
-	$(PYTHON) -m src.evaluation.runner --config experiments/configs/multiagent.yaml
-
-eval-dev:
-	$(PYTHON) -m src.evaluation.runner --config experiments/configs/dev.yaml
-
 CONFIG ?= experiments/configs/langfuse_baseline.yaml
 
 run-experiment:
 	$(PYTHON) scripts/run_experiment.py $(CONFIG)
 
 run-qe-test:
-	$(PYTHON) scripts/run_experiment.py experiments/configs/query_expansion.yaml --max-items 10
+	$(PYTHON) scripts/run_experiment.py experiments/configs/query_expansion.yaml --max-items 3
 
 # GraphRAG Setup
 graphrag-init:
@@ -101,13 +88,6 @@ graphrag-inspect:
 	@echo "Inspecting GraphRAG index files"
 	$(PYTHON) scripts/inspect_graphrag_index.py
 
-# GraphRAG Indexing (Python API - recommended)
-graphrag-index-python:
-	@echo "Building GraphRAG index using Python API (no LiteLLM proxy needed)"
-	@echo "Using custom Anthropic ChatModel and HuggingFace EmbeddingModel"
-	@echo ""
-	$(PYTHON) scripts/graphrag_index_python.py --input-dir data/finder_text --output-dir data/graphrag/output --skip-chunking
-
 # GraphRAG Indexing (CLI - uses OpenAI API directly)
 graphrag-index:
 	@echo "Building GraphRAG index via CLI (this will take 30-90 minutes)"
@@ -121,7 +101,7 @@ graphrag-index:
 
 graphrag-test:
 	@echo "Running quick GraphRAG test (10 items)"
-	$(PYTHON) scripts/run_experiment.py experiments/configs/graphrag_baseline.yaml --max-items 10
+	$(PYTHON) scripts/run_experiment.py experiments/configs/graphrag_baseline.yaml --max-items 5
 
 graphrag-baseline:
 	@echo "Running GraphRAG baseline experiment (local search)"

@@ -69,7 +69,7 @@ Examples:
     parser.add_argument(
         "--max-items",
         type=int,
-        default=None,
+        default=5,
         help="Limit number of dataset items to process (for testing)",
     )
 
@@ -103,8 +103,8 @@ def display_config_summary(config: LangfuseExperimentConfig):
         print(f"  Reranking:         Enabled")
     print()
     print("LLM Configuration:")
-    for agent, llm_config in config.llm_configs.items():
-        print(f"  {agent}:")
+    for role, llm_config in config.llm_configs.items():
+        print(f"  {role}:")
         print(f"    Provider:        {llm_config.provider}")
         print(f"    Model:           {llm_config.model}")
         print(f"    Temperature:     {llm_config.temperature}")

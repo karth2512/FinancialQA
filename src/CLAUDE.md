@@ -61,7 +61,7 @@ result = pipeline.process_query(query)
 **Purpose:** RAG pipeline implementations
 
 **Files:**
-- `baseline.py` - Single-agent RAG (retrieve → generate)
+- `baseline.py` - Baseline RAG (retrieve → generate)
 
 **Status:** ✅ Fully implemented BUT not used by Langfuse experiments
 
@@ -130,24 +130,7 @@ If only BM25 is needed, can delete `dense.py` and `hybrid.py` to reduce dependen
 - Retrievers can build indexes on-demand
 - Can delete if consolidating on Langfuse workflow
 
-### 5. Agents (`agents/`)
-
-**Purpose:** Multi-agent RAG system
-
-**Status:** ❌ **SCAFFOLDING ONLY - NO IMPLEMENTATIONS**
-
-**Files:**
-- `base.py` - Abstract Agent class, AgentConfig, AgentExecution
-
-**Reality Check:**
-- Only base classes exist
-- No concrete agent implementations (QueryUnderstanding, ContextResolution, etc.)
-- Config supports multi-agent but task function has placeholder
-- No multi-agent configs in `experiments/configs/`
-
-**Verdict:** DELETE entire directory unless multi-agent is planned soon
-
-### 6. Evaluation (`evaluation/`)
+### 5. Evaluation (`evaluation/`)
 
 **Purpose:** OLD evaluation system (pre-Langfuse)
 
@@ -194,13 +177,8 @@ LangfuseExperimentConfig (extends base)
   - Additional fields: dataset_name, evaluators, concurrency, etc.
 ```
 
-**Over-Engineering:**
-- `agent_architecture` field - No multi-agent implementation
-- `orchestration_mode` field - No multi-agent implementation
-- `use_local_data` + `local_data_path` - Not implemented (line 236 TODO)
-
-**Simplification:**
-Remove unused fields or mark as Optional[...] = None for future use
+**Note:**
+- `use_local_data` + `local_data_path` - Not implemented (TODO)
 
 ### 8. Utilities (`utils/`)
 
@@ -247,7 +225,6 @@ Merge approaches - use Langfuse workflow with actual RAG pipeline
 
 Multiple TODOs with placeholder implementations:
 - Line 90: "TODO: Replace with actual RAG pipeline implementation"
-- Line 152: "TODO: Replace with actual multi-agent RAG implementation"
 - Line 236: "TODO: Implement local data loading"
 
 **This indicates:**
@@ -317,11 +294,7 @@ scripts/run_experiment.py
 **Cause:** Task function doesn't instantiate retrievers
 **Fix:** Use config.retrieval_config to create retriever in task function
 
-### 4. "Multi-agent not working"
-**Cause:** No concrete agent implementations exist
-**Fix:** Either implement agents or remove multi-agent config options
-
-### 5. "Old evaluation vs. new evaluation confusion"
+### 4. "Old evaluation vs. new evaluation confusion"
 **Cause:** Two separate systems coexist
 **Fix:** Consolidate on one system (recommend Langfuse after fixing)
 
@@ -355,28 +328,24 @@ scripts/run_experiment.py
 
 ### Short-Term (Clean Up)
 1. ❌ Delete `src/data_handler/preprocessor.py` (unused)
-2. ❌ Delete `src/agents/` (no implementations)
-3. ❌ Delete `src/langfuse_integration/analysis.py` (not in workflow)
-4. ❌ Delete `src/langfuse_integration/client.py` (redundant)
-5. ⚠️ Decide: Keep or delete `src/evaluation/` (old system)
+2. ❌ Delete `src/langfuse_integration/analysis.py` (not in workflow)
+3. ❌ Delete `src/langfuse_integration/client.py` (redundant)
+4. ⚠️ Decide: Keep or delete `src/evaluation/` (old system)
 
 ### Medium-Term (Simplify)
-1. Remove unused config fields (agent_architecture, local_data_path)
-2. Consolidate on single evaluation system
-3. Consider deleting dense/hybrid retrievers if only using BM25
+1. Consolidate on single evaluation system
+2. Consider deleting dense/hybrid retrievers if only using BM25
 
 ### Long-Term (Optimize)
 1. Make config truly drive execution (instantiate retrievers from config)
-2. Add actual multi-agent if needed, or remove scaffolding
+2. Add new advanced RAG methodologies as needed
 3. Reduce dependencies (remove ChromaDB if not using dense retrieval)
 
 ## Questions to Resolve
 
 1. **Old Evaluation System:** Delete `src/evaluation/` or keep for non-Langfuse usage?
-2. **Multi-Agent:** Implement or remove all agent-related code?
-3. **Dense/Hybrid Retrieval:** Keep or delete if only using BM25?
-4. **Local Data Loading:** Implement or remove use_local_data config?
-5. **Dataset Preprocessor:** Why created if never used?
+2. **Dense/Hybrid Retrieval:** Keep or delete if only using BM25?
+3. **Local Data Loading:** Implement or remove use_local_data config?
 
 ---
 

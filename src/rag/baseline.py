@@ -1,5 +1,5 @@
 """
-Baseline single-agent RAG pipeline.
+Baseline RAG pipeline.
 
 This module implements a simple RAG approach: query → retrieve → generate.
 """
@@ -15,7 +15,7 @@ from src.utils.llm_client import LLMClient, create_llm_client
 
 
 class BaselineRAG:
-    """Baseline single-agent RAG pipeline."""
+    """Baseline RAG pipeline."""
 
     def __init__(
         self,

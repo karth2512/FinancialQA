@@ -12,6 +12,8 @@ faiss-cpu>=1.7.4
 graphrag>=2.0.0
 lancedb>=0.4.0
 pyarrow>=14.0.0
+llama-index-core>=0.10.0
+llama-index-embeddings-huggingface>=0.2.0
 
 # Evaluation Dependencies
 evaluate>=0.4.0

@@ -38,7 +38,6 @@ All configurations are validated against Pydantic schemas in `src/config/experim
 ### Missing Configurations (Referenced but Don't Exist)
 
 - **latest.yaml** - Referenced in Makefile line 48, needs creation
-- **multiagent.yaml** - Referenced in Makefile line 54, multiagent not implemented yet
 
 ## Configuration Schema
 
@@ -50,7 +49,7 @@ All experiment configs must include:
 name: "Descriptive Experiment Name"
 description: "What this experiment tests and why"
 run_id: "unique-identifier-v1.0.0"
-pipeline_type: "baseline"  # or "multiagent", "specialized"
+pipeline_type: "baseline"  # or "query_expansion"
 
 retrieval_config:
   strategy: "bm25"  # or "dense", "hybrid"
@@ -65,7 +64,7 @@ retrieval_config:
   dense_weight: 0.5  # for hybrid only
 
 llm_configs:
-  generator:  # for baseline, use agent names for multiagent
+  generator:  # for baseline; add expander for query_expansion
     provider: "anthropic"  # or "openai", "local"
     model: "claude-3-5-haiku-20241022"
     temperature: 0.0
@@ -239,8 +238,6 @@ retrieval_config:
 
 The following are defined in schemas but never used in practice:
 - `reranking` - Always false, no implementation exists
-- `agent_architecture` - Multiagent not implemented
-- `orchestration_mode` - Multiagent not implemented
 - `use_local_data` - Always false, local loading stubbed
 
 ### Hard-coded Values

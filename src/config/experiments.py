@@ -115,6 +115,21 @@ class RetrievalConfig(BaseModel):
         0.5, ge=0.0, le=1.0, description="Weight for dense in hybrid mode"
     )
 
+    # Hierarchical-specific config
+    hierarchical_chunk_sizes: Optional[List[int]] = Field(
+        [2048, 512, 128],
+        description="Chunk sizes for hierarchy levels (largest to smallest)",
+    )
+    hierarchical_chunk_overlap: Optional[int] = Field(
+        20, ge=0, description="Token overlap between chunks at same level"
+    )
+    hierarchical_merge_threshold: Optional[float] = Field(
+        0.5,
+        ge=0.0,
+        le=1.0,
+        description="Merge if (retrieved_siblings / total_siblings) >= threshold",
+    )
+
     # GraphRAG-specific config
     graphrag_root: Optional[str] = Field(
         "./data/graphrag", description="Path to GraphRAG root directory"
@@ -137,7 +152,7 @@ class RetrievalConfig(BaseModel):
     @classmethod
     def validate_strategy(cls, v: str) -> str:
         """Validate retrieval strategy is supported."""
-        valid_strategies = {"bm25", "dense", "hybrid", "graphrag"}
+        valid_strategies = {"bm25", "dense", "hybrid", "graphrag", "hierarchical"}
         print(f"STRATEGY: {v}")
         if v not in valid_strategies:
             raise ValueError(f"strategy must be one of {valid_strategies}")
@@ -152,18 +167,12 @@ class ExperimentConfig(BaseModel):
         ..., min_length=1, description="What this experiment tests"
     )
     run_id: str = Field(..., min_length=1, description="Unique identifier for this run")
-    pipeline_type: str = Field(..., description="baseline, multiagent, or specialized")
+    pipeline_type: str = Field(..., description="RAG pipeline type (baseline or query_expansion)")
     retrieval_config: RetrievalConfig = Field(
         ..., description="Retrieval strategy configuration"
     )
     llm_configs: Dict[str, LLMConfig] = Field(
-        ..., description="LLM config per agent or single for baseline"
-    )
-    agent_architecture: Optional[List[str]] = Field(
-        None, description="Agent types in execution order (multiagent only)"
-    )
-    orchestration_mode: Optional[str] = Field(
-        None, description="sequential or parallel (multiagent only)"
+        ..., description="LLM configs keyed by role (e.g. generator, expander)"
     )
     hyperparameters: Dict[str, Any] = Field(
         default_factory=dict, description="Additional hyperparameters"
@@ -180,16 +189,6 @@ class ExperimentConfig(BaseModel):
                 f"Got: {v}. "
                 f"Use 'query_expansion' for dual LLM query expansion RAG."
             )
-        return v
-
-    @field_validator("orchestration_mode")
-    @classmethod
-    def validate_orchestration_mode(cls, v: Optional[str]) -> Optional[str]:
-        """Validate orchestration mode if provided."""
-        if v is not None:
-            valid_modes = {"sequential", "parallel"}
-            if v not in valid_modes:
-                raise ValueError(f"orchestration_mode must be one of {valid_modes}")
         return v
 
     @field_validator("hyperparameters")
