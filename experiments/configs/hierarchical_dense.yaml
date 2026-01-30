@@ -1,11 +1,11 @@
 name: "hierarchical_dense_baseline"
-description: "Hierarchical chunking with dense embeddings and auto-merging"
+description: "Hierarchical chunking with dense embeddings, auto-merging, and LLM reranking"
 run_id: "exp-hierarchical-001"
 pipeline_type: "baseline"
 
 retrieval_config:
   strategy: "hierarchical"
-  top_k: 5
+  top_k: 10  # Retrieve more initially for reranking
 
   # Hierarchical parameters
   hierarchical_chunk_sizes: [2048, 512, 128]  # 3-level hierarchy
@@ -15,6 +15,10 @@ retrieval_config:
   # Embedding model (used by LlamaIndex)
   embedding_model: "all-MiniLM-L6-v2"
 
+  # Reranking configuration
+  enable_reranking: true
+  rerank_top_k: 5  # Filter to top 5 after reranking
+
 llm_configs:
   generator:
     provider: "anthropic"
@@ -22,6 +26,13 @@ llm_configs:
     temperature: 0.0
     max_tokens: 512
     api_key_env_var: "ANTHROPIC_API_KEY"
+
+  reranker:
+    provider: "openai"
+    model: "gpt-4o-mini"
+    temperature: 0.0
+    max_tokens: 1024
+    api_key_env_var: "OPENAI_API_KEY"
 
 langfuse_dataset_name: "financial_qa_benchmark_v1"
 enable_item_evaluators: true

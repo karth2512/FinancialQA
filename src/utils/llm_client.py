@@ -6,9 +6,13 @@ for OpenAI, Anthropic, and local model LLM clients.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Type, TypeVar
 import time
 import os
+
+from pydantic import BaseModel
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class LLMClient(ABC):
@@ -120,6 +124,54 @@ class OpenAIClient(LLMClient):
 
         return ""  # Should never reach here
 
+    def generate_structured(self, prompt: str, response_model: Type[T]) -> T:
+        """
+        Generate structured output using OpenAI's native Pydantic support.
+
+        Uses beta.chat.completions.parse() which handles:
+        - Converting Pydantic model to JSON schema
+        - Deserializing response to typed data structure
+        - Handling refusals if they arise
+
+        Args:
+            prompt: Input prompt text
+            response_model: Pydantic model class for the expected response
+
+        Returns:
+            Parsed Pydantic model instance
+
+        Raises:
+            ValueError: If model refuses to respond
+            LLMClientError: If API call fails
+        """
+        for attempt in range(self.max_retries):
+            try:
+                completion = self.client.beta.chat.completions.parse(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format=response_model,
+                    temperature=0.0,  # Deterministic for structured output
+                    max_tokens=self.max_tokens,
+                )
+
+                parsed = completion.choices[0].message.parsed
+                if parsed is None:
+                    refusal = completion.choices[0].message.refusal
+                    raise ValueError(f"Model refused to respond: {refusal}")
+                return parsed
+
+            except ValueError:
+                # Re-raise refusal errors without retry
+                raise
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    raise LLMClientError(
+                        f"OpenAI structured output failed after {self.max_retries} attempts: {e}"
+                    )
+                time.sleep(2**attempt)  # Exponential backoff
+
+        raise LLMClientError("Unexpected error in generate_structured")
+
     def count_tokens(self, text: str) -> int:
         """Approximate token count (rough estimate: 4 chars per token)."""
         return len(text) // 4
@@ -131,6 +183,8 @@ class OpenAIClient(LLMClient):
             "gpt-3.5-turbo": {"prompt": 0.0005 / 1000, "completion": 0.0015 / 1000},
             "gpt-4": {"prompt": 0.03 / 1000, "completion": 0.06 / 1000},
             "gpt-4-turbo": {"prompt": 0.01 / 1000, "completion": 0.03 / 1000},
+            "gpt-4o": {"prompt": 0.005 / 1000, "completion": 0.015 / 1000},
+            "gpt-4o-mini": {"prompt": 0.00015 / 1000, "completion": 0.0006 / 1000},
         }
 
         model_pricing = pricing.get(self.model, pricing["gpt-3.5-turbo"])
