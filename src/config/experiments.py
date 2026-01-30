@@ -107,7 +107,10 @@ class RetrievalConfig(BaseModel):
     embedding_model: Optional[str] = Field(
         "all-MiniLM-L6-v2", description="For dense/hybrid retrieval"
     )
-    reranking: bool = Field(False, description="Whether to apply reranking")
+    enable_reranking: bool = Field(False, description="Whether to apply LLM-based reranking")
+    rerank_top_k: Optional[int] = Field(
+        None, description="Number of passages to keep after reranking (None = keep all)"
+    )
     bm25_weight: Optional[float] = Field(
         0.5, ge=0.0, le=1.0, description="Weight for BM25 in hybrid mode"
     )
@@ -128,6 +131,10 @@ class RetrievalConfig(BaseModel):
         ge=0.0,
         le=1.0,
         description="Merge if (retrieved_siblings / total_siblings) >= threshold",
+    )
+    hierarchical_persist_dir: Optional[str] = Field(
+        "./data/hierarchical_index",
+        description="Directory to persist hierarchical index",
     )
 
     # GraphRAG-specific config

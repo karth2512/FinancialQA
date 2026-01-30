@@ -1,11 +1,11 @@
 name: "hierarchical_with_query_expansion"
-description: "Query expansion + hierarchical for maximum recall and context"
+description: "Query expansion + hierarchical + LLM reranking for maximum recall and precision"
 run_id: "exp-hierarchical-qe-001"
 pipeline_type: "query_expansion"  # Uses QueryExpansionRAG
 
 retrieval_config:
   strategy: "hierarchical"
-  top_k: 5
+  top_k: 15  # Retrieve more initially for reranking
 
   # Hierarchical config
   hierarchical_chunk_sizes: [2048, 512, 128]
@@ -14,6 +14,10 @@ retrieval_config:
 
   # Embedding config
   embedding_model: "all-MiniLM-L6-v2"
+
+  # Reranking configuration
+  enable_reranking: true
+  rerank_top_k: 10  # Filter to top 10 after reranking
 
 llm_configs:
   expander:
@@ -24,11 +28,18 @@ llm_configs:
     api_key_env_var: "OPENAI_API_KEY"
 
   generator:
-    provider: "anthropic"
-    model: "claude-3-5-haiku-20241022"
+    provider: "openai"
+    model: "gpt-4o-mini"
     temperature: 0.0
     max_tokens: 512
-    api_key_env_var: "ANTHROPIC_API_KEY"
+    api_key_env_var: "OPENAI_API_KEY"
+
+  reranker:
+    provider: "openai"
+    model: "gpt-4o-mini"
+    temperature: 0.0
+    max_tokens: 1024
+    api_key_env_var: "OPENAI_API_KEY"
 
 hyperparameters:
   num_expanded_queries: 3  # Original + 3 variants

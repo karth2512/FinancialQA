@@ -120,7 +120,22 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
             "hierarchical_merge_threshold": retrieval_config.hierarchical_merge_threshold,
             "embedding_model": retrieval_config.embedding_model or "all-MiniLM-L6-v2",
             "top_k": retrieval_config.top_k,
+            "persist_dir": retrieval_config.hierarchical_persist_dir,
+            "enable_reranking": retrieval_config.enable_reranking,
+            "rerank_top_k": retrieval_config.rerank_top_k,
         }
+
+        # Create reranker LLM client if enabled
+        reranker_llm = None
+        if retrieval_config.enable_reranking:
+            reranker_config = config.llm_configs.get("reranker")
+            if reranker_config is None:
+                raise ValueError(
+                    "Reranking enabled but 'reranker' LLM config not found in config.llm_configs"
+                )
+            reranker_llm = create_llm_client(reranker_config.model_dump())
+            logger.info(f"Reranker LLM: {reranker_config.provider}/{reranker_config.model}")
+            hierarchical_config["reranker_llm"] = reranker_llm
 
         # Create hierarchical retriever
         from src.retrieval.llamaindex_hierarchical import (
@@ -131,9 +146,12 @@ def _create_baseline_task(config: LangfuseExperimentConfig) -> Callable:
     else:
         raise ValueError(f"Unsupported retrieval strategy: {strategy}")
 
-    # Index corpus
+    # Index corpus (with persistence for hierarchical)
     logger.info(f"Indexing corpus with {strategy} retriever...")
-    retriever.index_corpus(corpus)
+    if strategy == "hierarchical":
+        retriever.index_corpus_or_load(corpus)
+    else:
+        retriever.index_corpus(corpus)
 
     # Initialize LLM client
     llm_config = config.llm_configs.get("generator")
@@ -280,12 +298,43 @@ def _create_query_expansion_task(config: LangfuseExperimentConfig) -> Callable:
                 retrieval_config.graphrag_model_config.embedding_model
             )
         retriever = GraphRAGRetriever(retriever_config)
+    elif strategy == "hierarchical":
+        from src.retrieval.llamaindex_hierarchical import (
+            LlamaIndexHierarchicalRetriever,
+        )
+
+        hierarchical_config = {
+            "hierarchical_chunk_sizes": retrieval_config.hierarchical_chunk_sizes,
+            "hierarchical_chunk_overlap": retrieval_config.hierarchical_chunk_overlap,
+            "hierarchical_merge_threshold": retrieval_config.hierarchical_merge_threshold,
+            "embedding_model": retrieval_config.embedding_model or "all-MiniLM-L6-v2",
+            "top_k": retrieval_config.top_k,
+            "persist_dir": retrieval_config.hierarchical_persist_dir,
+            "enable_reranking": retrieval_config.enable_reranking,
+            "rerank_top_k": retrieval_config.rerank_top_k,
+        }
+
+        # Create reranker LLM client if enabled
+        if retrieval_config.enable_reranking:
+            reranker_config = config.llm_configs.get("reranker")
+            if reranker_config is None:
+                raise ValueError(
+                    "Reranking enabled but 'reranker' LLM config not found in config.llm_configs"
+                )
+            reranker_llm = create_llm_client(reranker_config.model_dump())
+            logger.info(f"Reranker LLM: {reranker_config.provider}/{reranker_config.model}")
+            hierarchical_config["reranker_llm"] = reranker_llm
+
+        retriever = LlamaIndexHierarchicalRetriever(hierarchical_config)
     else:
         raise ValueError(f"Unknown retrieval strategy: {strategy}")
 
-    # Index corpus (once)
+    # Index corpus (once, with persistence for hierarchical)
     logger.info(f"Building {strategy} index...")
-    retriever.index_corpus(corpus)
+    if strategy == "hierarchical":
+        retriever.index_corpus_or_load(corpus)
+    else:
+        retriever.index_corpus(corpus)
     logger.info("Index built successfully")
 
     # Create LLM clients
